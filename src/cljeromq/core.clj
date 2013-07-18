@@ -21,11 +21,15 @@
           (finally (.term ~id)))))
 
 ;; Non-blocking send/recv
-(def no-block ZMQ/NOBLOCK)
-(def dont-wait ZMQ/DONTWAIT)
+(def +no-block+ ZMQ/NOBLOCK)
+(def +dont-wait+ ZMQ/DONTWAIT)
+
 ;; More message parts are coming
-(def sndmore ZMQ/SNDMORE)
-(def send-more ZMQ/SNDMORE)
+(def +sndmore+ ZMQ/SNDMORE)
+;; This next "constant" conflicts with the send-more function defined below.
+;; Hmm.
+(comment (def send-more ZMQ/SNDMORE))
+(def +send-more+ ZMQ/SNDMORE)
 
 ;;; Socket types
 ;; Request/Reply
@@ -104,8 +108,9 @@
   ([#^ZMQ$Socket socket #^String message]
      (send socket message ZMQ/NOBLOCK)))
 
-(defn send-more [#^ZMQ$Socket socket message]
-  (send socket message send-more))
+(defn send-partial [#^ZMQ$Socket socket message]
+  "I'm seeing this as a way to send all the messages in an envelope, except the last."
+  (send socket message +send-more+))
 
 (defn send-all [#^ZMQ$Socket socket messages]
   "At this point, I'm basically envisioning the usage here as something like HTTP.
@@ -116,7 +121,7 @@ I just need to get something written for my
 \"get the rope thrown across the bridge\" approach.
 It totally falls apart when I'm just trying to send a string."
   (doseq [m messages]
-    (send-more socket m))
+    (send-partial socket m))
   (send socket ""))
 
 (defn identify
@@ -140,7 +145,7 @@ It totally falls apart when I'm just trying to send a string."
             result))))
   ([#^ZMQ$Socket socket]
      ;; FIXME: Is this actually the flag I want?
-     (recv-all socket send-more)))
+     (recv-all socket +send-more+)))
 
 (defn recv-str
   ([#^ZMQ$Socket socket]
@@ -151,13 +156,21 @@ It totally falls apart when I'm just trying to send a string."
      (when-let [s (recv socket flags)]
        (-> s String. .trim))))
 
+(defn recv-all-str
+  "How much, overhead gets added by just converted the received primitive Byte[] to strings?"
+  ([#^ZMQ$Socket socket]
+     (recv-all-str socket 0))
+  ([#^ZMQ$Socket socket flags]
+     (let [packets (recv-all socket flags)]
+       (map #(String. %) packets))))
+
 (defn recv-obj
   "This function is horribly dangerous and really should not be used.
 It's also quite convenient:
 read a string from a socket and convert it to a clojure object.
 That's how this is really meant to be used, if you can trust your peers.
 Could it possibly be used safely through EDN?"
-  ([#ZMQ$Socket socket]
+  ([#^ZMQ$Socket socket]
      (-> socket recv-str read))
   ([#^ZMQ$Socket socket flags]
      ;; This is pathetic, but I'm on the verge of collapsing
