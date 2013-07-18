@@ -1,5 +1,8 @@
 ;; The file is adapted from zilch, with some other useful helper methods.
 ;; https://github.com/dysinger/zilch
+;;
+;; Really need to add its license...like all the sample ZMQ code, this
+;; should be LGPL...right?
 
 
 (ns cljeromq.core
@@ -127,13 +130,17 @@ It totally falls apart when I'm just trying to send a string."
      (recv socket 0)))
 
 (defn recv-all
-  [#^ZMQ$Socket socket flags]
-  (loop [acc []]
-    (let [msg (recv socket flags)
-          result (conj acc msg)]
-      (if (.hasReceiveMore socket)
-        (recur result)
-        result))))
+  "Does it make sense to accept flags here?"
+  ([#^ZMQ$Socket socket flags]
+      (loop [acc []]
+        (let [msg (recv socket flags)
+              result (conj acc msg)]
+          (if (.hasReceiveMore socket)
+            (recur result)
+            result))))
+  ([#^ZMQ$Socket socket]
+     ;; FIXME: Is this actually the flag I want?
+     (recv-all socket send-more)))
 
 (defn recv-str
   ([#^ZMQ$Socket socket]
@@ -143,6 +150,20 @@ It totally falls apart when I'm just trying to send a string."
      ;;(-> socket (recv flags) String. .trim)
      (when-let [s (recv socket flags)]
        (-> s String. .trim))))
+
+(defn recv-obj
+  "This function is horribly dangerous and really should not be used.
+It's also quite convenient:
+read a string from a socket and convert it to a clojure object.
+That's how this is really meant to be used, if you can trust your peers.
+Could it possibly be used safely through EDN?"
+  ([#ZMQ$Socket socket]
+     (-> socket recv-str read))
+  ([#^ZMQ$Socket socket flags]
+     ;; This is pathetic, but I'm on the verge of collapsing
+     ;; from exhaustion
+     (when-let [s (recv-str socket flags)]
+       (read s))))
 
 (defn poller
   "Return a new Poller instance.
