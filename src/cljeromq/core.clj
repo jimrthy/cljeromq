@@ -20,47 +20,52 @@
      (try ~@body
           (finally (.term ~id)))))
 
-;; Non-blocking send/recv
-(def +no-block+ ZMQ/NOBLOCK)
-(def +dont-wait+ ZMQ/DONTWAIT)
+(def const {
+            ;; Non-blocking send/recv
+            :no-block ZMQ/NOBLOCK
+            :dont-wait ZMQ/DONTWAIT
 
-;; More message parts are coming
-(def +sndmore+ ZMQ/SNDMORE)
-;; This next "constant" conflicts with the send-more function defined below.
-;; Hmm.
-(comment (def send-more ZMQ/SNDMORE))
-(def +send-more+ ZMQ/SNDMORE)
+            ;; More message parts are coming
+            :sndmore ZMQ/SNDMORE
+            :send-more ZMQ/SNDMORE
 
-;;; Socket types
-;; Request/Reply
-(def req ZMQ/REQ)
-(def rep ZMQ/REP)
-;; Publish/Subscribe
-(def pub ZMQ/PUB)
-(def sub ZMQ/SUB)
-;; Extended Publish/Subscribe
-(def x-pub ZMQ/XPUB)
-(def x-sub ZMQ/XSUB)
-;; Push/Pull
-(def push ZMQ/PUSH)
-(def pull ZMQ/PULL)
-;; Internal 1:1
-(def pair ZMQ/PAIR)
+            ;;; Socket types
 
-;; Router/Dealer
+            ;; Request/Reply
+            :req ZMQ/REQ
+            :rep ZMQ/REP
 
-;; Creates/consumes request-reply routing envelopes.
-;; Lets you route messages to specific connections if you
-;; know their identities.
-(def router ZMQ/ROUTER)
-;; Combined ventilator/sink.
-;; Does load balancing on output and fair-queuing on input.
-;; Can shuffle messages out to N nodes then shuffle the replies back.
-;; Raw bidirectional async pattern.
-(def dealer ZMQ/DEALER)
-;; Obsolete names for Router/Dealer
-(def xreq ZMQ/XREQ)
-(def xrep ZMQ/XREP)
+            ;; Publish/Subscribe
+            :pub ZMQ/PUB
+            :sub ZMQ/SUB
+
+            ;; Extended Publish/Subscribe
+            :x-pub ZMQ/XPUB
+            :x-sub ZMQ/XSUB
+            ;; Push/Pull
+            
+            :push ZMQ/PUSH
+            :pull ZMQ/PULL
+
+            ;; Internal 1:1
+            :pair ZMQ/PAIR
+
+            ;; Router/Dealer
+
+            ;; Creates/consumes request-reply routing envelopes.
+            ;; Lets you route messages to specific connections if you
+            ;; know their identities.
+            :router ZMQ/ROUTER
+
+            ;; Combined ventilator/sink.
+            ;; Does load balancing on output and fair-queuing on input.
+            ;; Can shuffle messages out to N nodes then shuffle the replies back.
+            ;; Raw bidirectional async pattern.
+            :dealer ZMQ/DEALER
+
+            ;; Obsolete names for Router/Dealer
+            :xreq ZMQ/XREQ
+            :xrep ZMQ/XREP})
 
 (defn socket
   [#^ZMQ$Context context type]
@@ -110,7 +115,7 @@
 
 (defn send-partial [#^ZMQ$Socket socket message]
   "I'm seeing this as a way to send all the messages in an envelope, except the last."
-  (send socket message +send-more+))
+  (send socket message (const :send-more)))
 
 (defn send-all [#^ZMQ$Socket socket messages]
   "At this point, I'm basically envisioning the usage here as something like HTTP.
@@ -145,7 +150,7 @@ It totally falls apart when I'm just trying to send a string."
             result))))
   ([#^ZMQ$Socket socket]
      ;; FIXME: Is this actually the flag I want?
-     (recv-all socket +send-more+)))
+     (recv-all socket (const :send-more))))
 
 (defn recv-str
   ([#^ZMQ$Socket socket]
