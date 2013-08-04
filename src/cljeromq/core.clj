@@ -185,8 +185,9 @@ Could it possibly be used safely through EDN?"
 
 (defn poller
   "Return a new Poller instance.
-Realistically, this shouldn't be public...it opens the door
-for some pretty low-level stuff."
+Callers probably shouldn't be using something this low-level.
+Except when they need to.
+There doesn't seem any good reason to put effort into hiding it."
   [socket-count]
   (ZMQ$Poller. socket-count))
 
@@ -199,7 +200,8 @@ for some pretty low-level stuff."
   (.register poller socket poll-in))
 
 (defn socket-poller-in
-  "Get a poller attached to a seq of sockets"
+  "Attach a new poller to a seq of sockets.
+Honestly, should be smarter and just let me poll on a single socket."
   [sockets]
   (let [checker (poller (count sockets))]
     (doseq [s sockets]
