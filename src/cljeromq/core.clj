@@ -1,12 +1,11 @@
-;; The file is adapted from zilch, with some other useful helper methods.
-;; https://github.com/dysinger/zilch
+;; Really intended as a higher-level wrapper layer over
+;; cljzmq.
 ;;
-;; Really need to add its license...like all the sample ZMQ code, this
-;; should be LGPL...right?
-
+;; Really need to add the license...this project is LGPL.
 
 (ns cljeromq.core
   (:refer-clojure :exclude [send])
+  (:require [zeromq.zmq :as mq])
   (:import [org.zeromq ZMQ ZMQ$Context ZMQ$Socket ZMQ$Poller ZMQQueue])
   (:import (java.util Random)
            (java.nio ByteBuffer)))
