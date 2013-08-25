@@ -2,10 +2,17 @@
 ;; cljzmq.
 ;;
 ;; Really need to add the license...this project is LGPL.
+;; Q: Why?
+;; A: Because the most restrictive license on which it
+;; depends is currently zeromq.zmq, and that's its license.
+;; I'm strongly inclined to GPL this, since I think it adds
+;; pieces that offer real value so aren't worth LGPL'ing.
+;; Get it while it's hot, ladies and gentlemen.
 
 (ns cljeromq.core
   (:refer-clojure :exclude [send])
-  (:require [zeromq.zmq :as mq])
+  (:require [zeromq.zmq :as mq]
+            [byte-transforms :as bt])
   (:import [org.zeromq ZMQ ZMQ$Context ZMQ$Socket ZMQ$Poller ZMQQueue])
   (:import (java.util Random)
            (java.nio ByteBuffer)))
