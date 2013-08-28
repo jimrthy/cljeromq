@@ -115,8 +115,15 @@
 
 (defmethod send String
   ([#^ZMQ$Socket socket #^String message flags]
-     (.send socket (.getBytes message) flags))
-  ([#^ZMQ$Socket socket #^String message]
+     (.send socket (.getBytes message) flags)))
+
+;; Honestly, should have a specialized method to (send byte[])
+;; But that seems like YAGNI premature optimization.
+
+(defmethod send :default
+  ([#^ZMQ$Socket socket message flags]
+     (.send socket (bt/encode :base64) flags))
+  ([#^ZMQ$Socket socket message]
      (send socket message ZMQ/NOBLOCK)))
 
 (defn send-partial [#^ZMQ$Socket socket message]
