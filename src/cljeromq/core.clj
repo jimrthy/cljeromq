@@ -82,7 +82,26 @@
      (try ~@body
           (finally (.close ~name)))))
 
-(defn queue
+(defmacro with-poller [poller-name context socket & body]
+  "Cut down on some of the boilerplate around pollers.
+What's left still seems pretty annoying."
+  ;; I don't think I actually need this sort of gensym
+  ;; magic with clojure, do I?
+  (let [name# poller-name
+        ctx# context
+        s# socket]
+    `(let [~name# (mq/poller ~ctx#)]
+       (mq/register ~name# ~s# :pollin :pollerr)
+       (try
+         ~@body
+         (finally
+           (mq/unregister ~name# ~s#))))))
+
+(comment (defn queue
+  "Forwarding device for request-reply messaging.
+cljzmq doesn't seem to have an equivalent.
+It almost definitely needs one.
+FIXME: Fork that repo, add this, send a Pull Request."
   [#^ZMQ$Context context #^ZMQ$Socket frontend #^ZMQ$Socket backend]
   (ZMQQueue. context frontend backend))
 
@@ -127,7 +146,10 @@
      (send socket message ZMQ/NOBLOCK)))
 
 (defn send-partial [#^ZMQ$Socket socket message]
-  "I'm seeing this as a way to send all the messages in an envelope, except the last."
+  "I'm seeing this as a way to send all the messages in an envelope, except 
+the last.
+Yes, it seems dumb, but it was convenient at one point.
+Honestly, that's probably a clue that this basic idea is just wrong."
   (send socket message (const :send-more)))
 
 (defn send-all [#^ZMQ$Socket socket messages]
@@ -175,7 +197,8 @@ It totally falls apart when I'm just trying to send a string."
        (-> s String. .trim))))
 
 (defn recv-all-str
-  "How much, overhead gets added by just converted the received primitive Byte[] to strings?"
+  "How much overhead gets added by just converting the received primitive
+Byte[] to strings?"
   ([#^ZMQ$Socket socket]
      (recv-all-str socket 0))
   ([#^ZMQ$Socket socket flags]
@@ -222,6 +245,10 @@ Honestly, should be smarter and just let me poll on a single socket."
     checker))
 
 (defn dump
+  "Cheeseball first draft at just logging incoming messages.
+This approach is pretty awful...at the very least it should build
+a string and return that.
+Then again, it's fairly lispy...callers can always rediret STDOUT."
   [#^ZMQ$Socket socket]
   (println (->> "-" repeat (take 38) (apply str)))
   (doseq [msg (recv-all socket 0)]
