@@ -103,7 +103,7 @@ cljzmq doesn't seem to have an equivalent.
 It almost definitely needs one.
 FIXME: Fork that repo, add this, send a Pull Request."
   [#^ZMQ$Context context #^ZMQ$Socket frontend #^ZMQ$Socket backend]
-  (ZMQQueue. context frontend backend))
+  (ZMQQueue. context frontend backend)))
 
 (defn bind
   [#^ZMQ$Socket socket url]
@@ -134,7 +134,9 @@ FIXME: Fork that repo, add this, send a Pull Request."
 
 (defmethod send String
   ([#^ZMQ$Socket socket #^String message flags]
-     (.send socket (.getBytes message) flags)))
+     (.send socket (.getBytes message) flags))
+  ([#^ZMQ$Socket socket #^String message]
+     (send socket message 0)))
 
 ;; Honestly, should have a specialized method to (send byte[])
 ;; But that seems like YAGNI premature optimization.
