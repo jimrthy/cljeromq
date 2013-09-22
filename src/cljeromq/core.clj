@@ -5,9 +5,11 @@
 ;; Q: Why?
 ;; A: Because the most restrictive license on which it
 ;; depends is currently zeromq.zmq, and that's its license.
-;; I'm strongly inclined to GPL this, since I think it adds
-;; pieces that offer real value so aren't worth LGPL'ing.
-;; Get it while it's hot, ladies and gentlemen.
+;; This probably isn't strictly required, and it gets finicky
+;; when it comes to the EPL...I am going to have to get an
+;; opinion from the FSF (and probably double-check with
+;; the 0mq people) to verify how this actually works in 
+;; practice.
 
 (ns cljeromq.core
   (:refer-clojure :exclude [send])
@@ -20,73 +22,93 @@
 (defn context [threads]
   (ZMQ/context threads))
 
+(defn terminate [#^ZMQ$Context ctx]
+  (.term ctx))
+
 (defmacro with-context
   [[id threads] & body]
   `(let [~id (context ~threads)]
      (try ~@body
-          (finally (.term ~id)))))
+          (finally (terminate ~id)))))
 
 (def const {
-            ;; Non-blocking send/recv
-            :no-block ZMQ/NOBLOCK
-            :dont-wait ZMQ/DONTWAIT
-
-            ;; More message parts are coming
-            :sndmore ZMQ/SNDMORE
-            :send-more ZMQ/SNDMORE
-
-            ;;; Socket types
-
-            ;; Request/Reply
-            :req ZMQ/REQ
-            :rep ZMQ/REP
-
-            ;; Publish/Subscribe
-            :pub ZMQ/PUB
-            :sub ZMQ/SUB
-
-            ;; Extended Publish/Subscribe
-            :x-pub ZMQ/XPUB
-            :x-sub ZMQ/XSUB
-            ;; Push/Pull
+            :control {
+                      ;; Non-blocking send/recv
+                      :no-block ZMQ/NOBLOCK
+                      :dont-wait ZMQ/DONTWAIT
+                                
+                      ;; More message parts are coming
+                      :sndmore ZMQ/SNDMORE
+                      :send-more ZMQ/SNDMORE}
             
-            :push ZMQ/PUSH
-            :pull ZMQ/PULL
+            ;;; Socket types
+            :socket-type {
+                          ;; Request/Reply
+                          :req ZMQ/REQ
+                          :rep ZMQ/REP
+                                    
+                          ;; Publish/Subscribe
+                          :pub ZMQ/PUB
+                          :sub ZMQ/SUB
+                          
+                          ;; Extended Publish/Subscribe
+                          :x-pub ZMQ/XPUB
+                          :x-sub ZMQ/XSUB
+                          ;; Push/Pull
+                          
+                          :push ZMQ/PUSH
+                          :pull ZMQ/PULL
 
-            ;; Internal 1:1
-            :pair ZMQ/PAIR
+                          ;; Internal 1:1
+                          :pair ZMQ/PAIR
 
-            ;; Router/Dealer
+                          ;; Router/Dealer
 
-            ;; Creates/consumes request-reply routing envelopes.
-            ;; Lets you route messages to specific connections if you
-            ;; know their identities.
-            :router ZMQ/ROUTER
+                          ;; Creates/consumes request-reply routing envelopes.
+                          ;; Lets you route messages to specific connections if you
+                          ;; know their identities.
+                          :router ZMQ/ROUTER
+                                    
+                          ;; Combined ventilator/sink.
+                          ;; Does load balancing on output and fair-queuing on input.
+                          ;; Can shuffle messages out to N nodes then shuffle the replies back.
+                          ;; Raw bidirectional async pattern.
+                          :dealer ZMQ/DEALER
+                                    
+                          ;; Obsolete names for Router/Dealer
+                          :xreq ZMQ/XREQ
+                          :xrep ZMQ/XREP}})
 
-            ;; Combined ventilator/sink.
-            ;; Does load balancing on output and fair-queuing on input.
-            ;; Can shuffle messages out to N nodes then shuffle the replies back.
-            ;; Raw bidirectional async pattern.
-            :dealer ZMQ/DEALER
-
-            ;; Obsolete names for Router/Dealer
-            :xreq ZMQ/XREQ
-            :xrep ZMQ/XREP})
+(defn sock->c
+  "Convert a keyword to a ZMQ constant"
+  [key]
+  ((const :socket-type) key))
 
 (defn socket
   [#^ZMQ$Context context type]
-  (.socket context type))
+  (let [real-type (sock->c type)]
+    (.socket context real-type)))
+
+(defn close [#^ZMQ$Socket s]
+  (.close s))
 
 (defmacro with-socket [[name context type] & body]
   `(let [~name (socket ~context ~type)]
      (try ~@body
-          (finally (.close ~name)))))
+          (finally (close ~name)))))
 
+;; FIXME: clojure.tools.macro!
+;; At the very least, poller-name needs to be inside a vector.
+;; context and socket...they're annoying.
 (defmacro with-poller [poller-name context socket & body]
   "Cut down on some of the boilerplate around pollers.
 What's left still seems pretty annoying."
   ;; I don't think I actually need this sort of gensym
   ;; magic with clojure, do I?
+  ;; Not really...but the autogensyms *do* need to happen inside
+  ;; inside the backtick.
+  ;; It's pretty blatant that I haven't had any time to
+  ;; do anything that resembles testing this code.
   (let [name# poller-name
         ctx# context
         s# socket]
@@ -107,13 +129,25 @@ FIXME: Fork that repo, add this, send a Pull Request."
 
 (defn bind
   [#^ZMQ$Socket socket url]
-  (doto socket
-    (.bind url)))
+  (.bind socket url))
+
+(defn bound-socket
+  "Return a new socket bound to the specified address"
+  [ctx type url]
+  (let [s (socket ctx type)]
+    (bind s url)
+    s))
 
 (defn connect
   [#^ZMQ$Socket socket url]
-  (doto socket
-    (.connect url)))
+  (.connect socket url))
+
+(defn connected-socket
+  "Returns a new socket connected to the specified URL"
+  [ctx type url]
+  (let [s (socket ctx type)]
+    (connect s url)
+    s))
 
 (defn subscribe
   ([#^ZMQ$Socket socket #^String topic]
@@ -231,6 +265,28 @@ There doesn't seem any good reason to put effort into hiding it."
 
 (def poll-in ZMQ$Poller/POLLIN)
 (def poll-out ZMQ$Poller/POLLOUT)
+
+(defn poll
+  "FIXME: This is just a wrapper around the base handler.
+It feels dumb and more than a little pointless. Aside from the
+fact that I think it's wrong.
+At this point, I just want to get pieces to compile so I can
+call it a night...
+what does that say about the dynamic/static debate?"
+  [poller]
+  (mq/poll poller))
+
+(defn check-poller 
+  "This sort of new-fangledness is why I started this library in the
+first place. It's missing the point more than a little if it's already
+in the default language binding." 
+  [poller time-out & keys]
+  (mq/check-poller poller time-out keys))
+
+(defn close 
+  "Yeah, this seems more than a little stupid"
+  [sock]
+  (.close sock))
 
 (defn register-in
   "Register a listening socket to poll on." 
