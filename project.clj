@@ -4,6 +4,12 @@
   :license {:name "Lesser General Public License"
             :url "http://www.gnu.org/licenses/lgpl.html"}
   :dependencies [[org.clojure/clojure "1.5.1"]
-                 [org.zeromq/jzmq "2.2.0"]
+                 ;; Switching to jeromq for now, at least until
+                 ;; zeromq 4 is released.
+                 ;;[org.zeromq/jzmq "2.2.0"]
+                 [org.jeromq/jeromq "0.3.0-SNAPSHOT"]
+                 [org.zeromq/cljzmq "0.1.1" :exclusions [org.zeromq/jzmq]]
                  [byte-transforms "0.1.0"]]
-  :main cljeromq.core)
+  :repositories {;"sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"
+                 "sonatype-nexus-snapshots" "https://oss.sonatype.org/content/repositories/snapshots"
+                 })
