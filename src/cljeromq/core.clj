@@ -97,10 +97,7 @@
      (try ~@body
           (finally (close ~name)))))
 
-;; FIXME: clojure.tools.macro!
-;; At the very least, poller-name needs to be inside a vector.
-;; context and socket...they're annoying.
-(defmacro with-poller [poller-name context socket & body]
+(defmacro with-poller [[poller-name context socket] & body]
   "Cut down on some of the boilerplate around pollers.
 What's left still seems pretty annoying."
   ;; I don't think I actually need this sort of gensym
