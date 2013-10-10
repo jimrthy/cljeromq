@@ -160,8 +160,13 @@ FIXME: Fork that repo, add this, send a Pull Request."
   ([#^ZMQ$Socket socket]
      (unsubscribe socket "")))
 
+;;; Send
+
 (defmulti send (fn [#^ZMQ$Socket socket message & flags]
                  (class message)))
+
+;; Honestly, should have a specialized method to (send byte[])
+;; But that seems like YAGNI premature optimization.
 
 (defmethod send String
   ([#^ZMQ$Socket socket #^String message flags]
@@ -169,8 +174,15 @@ FIXME: Fork that repo, add this, send a Pull Request."
   ([#^ZMQ$Socket socket #^String message]
      (send socket message 0)))
 
-;; Honestly, should have a specialized method to (send byte[])
-;; But that seems like YAGNI premature optimization.
+(defmethod send Keyword
+  ([#^ZMQ$Socket socket #^Keyword word flags]
+     ;; This seems more than a little problematic.
+     ;; At the very least, it seems like I should be sending
+     ;; two frames. Let the first identify the format
+     ;; (EDN). Seems worthy of more thought.
+     (send (str word) flags))
+  ([#^ZMQ$Socket socket #^Keyword word]
+     (send socket word 0)))
 
 (defmethod send :default
   ([#^ZMQ$Socket socket message flags]
