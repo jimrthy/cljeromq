@@ -13,6 +13,7 @@
                  [org.zeromq/cljzmq "0.1.1" :exclusions [org.zeromq/jzmq]]]
   :plugins [[lein-midje "3.0.0"]]
   :profiles {:dev {:dependencies [[midje "1.5.1"]]}}
+  :repl-options {:init-ns cljeromq.core}
   :repositories {;"sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"
                  "sonatype-nexus-snapshots" "https://oss.sonatype.org/content/repositories/snapshots"
                  })

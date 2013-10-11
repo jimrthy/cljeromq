@@ -2,18 +2,44 @@
   (:require [cljeromq.core :as core])
   (:use midje.sweet))
 
-(deftest a-test
-  (testing "FIXME, I fail."
-    (is (= 0 1))))
+(facts "Basic functionality"
+       (let [ctx (core/context 1)]
+         (try
+           (let [url "tcp://localhost:10101"
+                 sender (core/socket ctx :req)
+                 receiver (core/socket ctx :rep)]
+             (try
+               (core/bind receiver url)
+               (core/connect sender url)
 
-(facts "Basic message exchange"
+               (fact "Transmit string"
+                     (let [msg "xbcAzy"]
+                       (core/send sender msg)
+                       (let [received (core/recv receiver)]
+                         msg => received)))
+
+               (fact "Transmit keyword"
+                     (let [msg :message]
+                       (core/send sender msg)
+                       (let [received (core/recv receiver)]
+                         msg => received)))
+               (finally (core/close receiver)
+                        (core/close sender))))
+           (finally (core/terminate ctx)))))
+
+(facts "Basic message exchange with macros"
        (core/with-context [ctx 1]
-         (with-socket [receiver ctx (-> core/const :socket-type :rep)]
+         (core/with-socket [receiver ctx :rep]
+           receiver => receiver
+
            ;; TODO: Don't hard-code this port number
            (let [url  "tcp://localhost:10101"]
-             (bind receiver url)
-             (with-socket [sender ctx (-> core/const :socket-type :req)]
-               (connect sender url)
+             (core/bind receiver url)
+             (core/with-socket [sender ctx :req]
+               (core/connect sender url)
+
+               (fact "Connected"
+                     0 => 0)
 
                (fact "Transmit string"
                      (let [msg "abcxYz1"]

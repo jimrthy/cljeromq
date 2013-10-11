@@ -128,6 +128,13 @@ FIXME: Fork that repo, add this, send a Pull Request."
   [#^ZMQ$Socket socket url]
   (.bind socket url))
 
+(defmacro with-bound-socket
+  [[name ctx type url] & body]
+  (let [name# name]
+    `(with-socket [name# ~ctx ~type]
+       (bind name# ~url)
+       ~@body)))
+
 (defn bound-socket
   "Return a new socket bound to the specified address"
   [ctx type url]
@@ -138,6 +145,13 @@ FIXME: Fork that repo, add this, send a Pull Request."
 (defn connect
   [#^ZMQ$Socket socket url]
   (.connect socket url))
+
+(defmacro with-connected-socket
+  [[name ctx type url] & body]
+  (let [name# name]
+    `(with-socket [name# ~ctx ~type]
+       (connect name# ~url)
+       ~@body)))
 
 (defn connected-socket
   "Returns a new socket connected to the specified URL"
@@ -174,19 +188,21 @@ FIXME: Fork that repo, add this, send a Pull Request."
   ([#^ZMQ$Socket socket #^String message]
      (send socket message 0)))
 
-(defmethod send Keyword
-  ([#^ZMQ$Socket socket #^Keyword word flags]
+(defmethod send clojure.lang.Keyword
+  ([#^ZMQ$Socket socket #^clojure.lang.Keyword word flags]
      ;; This seems more than a little problematic.
      ;; At the very least, it seems like I should be sending
      ;; two frames. Let the first identify the format
      ;; (EDN). Seems worthy of more thought.
      (send (str word) flags))
-  ([#^ZMQ$Socket socket #^Keyword word]
+  ([#^ZMQ$Socket socket #^clojure.lang.Keyword word]
      (send socket word 0)))
 
 (defmethod send :default
   ([#^ZMQ$Socket socket message flags]
-     (.send socket (bt/encode :base64) flags))
+     (println "Trying to transmit:\n" message "\n(a "
+              (class message) ")")
+     (.send socket (bt/encode message :base64) flags))
   ([#^ZMQ$Socket socket message]
      (send socket message ZMQ/NOBLOCK)))
 
