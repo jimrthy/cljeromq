@@ -1,0 +1,13 @@
+#! /bin/sh
+
+# Based on
+# https://gist.github.com/stuartsierra/3062743
+# deploy a file created with an uberjar to a
+# local maven repo.
+
+# Original suggestion:
+#mvn deploy:deploy-file -DgroupId=jimrthy -DartifactId=cljeromq \
+#    -Dversion=0.1.0-SNAPSHOT -Dpackaging=jar \
+#    -Dfile=target/cljeromq-0.1.0-SNAPSHOT-standalone.jar -Durl=file:/home/james/repo
+
+lein localrepo install target/cljeromq-0.1.0-SNAPSHOT-standalone.jar /jimrthy/cljeromq 0.1.0-SNAPSHOT
