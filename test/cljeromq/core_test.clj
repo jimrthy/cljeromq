@@ -16,11 +16,13 @@
                      (let [msg "xbcAzy"]
                        (core/send sender msg)
                        (let [received (core/recv receiver)]
-                         msg => received)))
+                         received => msg)))
 
                (fact "Transmit keyword"
                      (let [msg :message]
+                       (println "Sending " msg)
                        (core/send sender msg)
+                       (println msg " sent")
                        (let [received (core/recv receiver)]
                          msg => received)))
                (finally (core/close receiver)

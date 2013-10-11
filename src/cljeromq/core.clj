@@ -182,11 +182,15 @@ FIXME: Fork that repo, add this, send a Pull Request."
 ;; Honestly, should have a specialized method to (send byte[])
 ;; But that seems like YAGNI premature optimization.
 
+(defmethod send bytes
+                 ([#^ZMQ$Socket socket #^bytes message flags]
+                   (.send socket message flags)))
+
 (defmethod send String
   ([#^ZMQ$Socket socket #^String message flags]
      (.send socket (.getBytes message) flags))
   ([#^ZMQ$Socket socket #^String message]
-     (send socket message 0)))
+     (send socket message ZMQ/NOBLOCK)))
 
 (defmethod send clojure.lang.Keyword
   ([#^ZMQ$Socket socket #^clojure.lang.Keyword word flags]
@@ -195,13 +199,20 @@ FIXME: Fork that repo, add this, send a Pull Request."
      ;; two frames. Let the first identify the format
      ;; (EDN). Seems worthy of more thought.
      (send (str word) flags))
+  ;; FIXME: This next line seems more than a little redundant.
+  ;; (It seems like default should handle it just fine)
   ([#^ZMQ$Socket socket #^clojure.lang.Keyword word]
-     (send socket word 0)))
+     (send socket word ZMQ/NOBLOCK)))
+
+(defmethod send Long
+  ([#^ZMQ$Socket socket message flags]
+     (throw (RuntimeException. "Really should enable sending integers"))))
 
 (defmethod send :default
   ([#^ZMQ$Socket socket message flags]
      (println "Trying to transmit:\n" message "\n(a "
               (class message) ")")
+     ;; Odds are, this is going to fail.
      (.send socket (bt/encode message :base64) flags))
   ([#^ZMQ$Socket socket message]
      (send socket message ZMQ/NOBLOCK)))
