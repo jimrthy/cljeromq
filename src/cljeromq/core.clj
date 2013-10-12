@@ -80,14 +80,20 @@
                           :xreq ZMQ/XREQ
                           :xrep ZMQ/XREP}})
 
-(defn sock->c
-  "Convert a keyword to a ZMQ constant"
+(defn control->const
+  "Convert a control keyword to a ZMQ constant"
+  [key]
+  (println "Extracting " key)
+  ((const :control) key))
+
+(defn sock->const
+  "Convert a socket keyword to a ZMQ constant"
   [key]
   ((const :socket-type) key))
 
 (defn socket
   [#^ZMQ$Context context type]
-  (let [real-type (sock->c type)]
+  (let [real-type (sock->const type)]
     (.socket context real-type)))
 
 (defn close [#^ZMQ$Socket s]
@@ -180,34 +186,23 @@ FIXME: Fork that repo, add this, send a Pull Request."
 (defmulti send (fn [#^ZMQ$Socket socket message & flags]
                  (class message)))
 
-;; Honestly, should have a specialized method to (send byte[])
-;; But that seems like YAGNI premature optimization.
+(defn flags->const ^long [flags]
+  "Use in conjunction with control-const to convert a series
+of/individual keyword into a logical-or'd flag to control
+socket options."
+  (if (seq? flags)
+    (reduce bit-or (map control->const flags))
+    (control->const flags)))
 
 (defmethod send bytes
                  ([#^ZMQ$Socket socket #^bytes message flags]
-                   (.send socket message flags)))
+                    (.send socket message (flags->const flags))))
 
 (defmethod send String
   ([#^ZMQ$Socket socket #^String message flags]
-     (.send socket (.getBytes message) flags))
+     (.send #^ZMQ$Socket socket #^bytes (.getBytes message) (flags->const flags)))
   ([#^ZMQ$Socket socket #^String message]
-     (send socket message ZMQ/NOBLOCK)))
-
-(comment (defmethod send clojure.lang.Keyword
-           ([#^ZMQ$Socket socket #^clojure.lang.Keyword word flags]
-              ;; This seems more than a little problematic.
-              ;; At the very least, it seems like I should be sending
-              ;; two frames. Let the first identify the format
-              ;; (EDN). Seems worthy of more thought.
-              (send (str word) flags))
-           ;; FIXME: This next line seems more than a little redundant.
-           ;; (It seems like default should handle it just fine)
-           ([#^ZMQ$Socket socket #^clojure.lang.Keyword word]
-              (send socket word ZMQ/NOBLOCK)))
-
-         (defmethod send Long
-           ([#^ZMQ$Socket socket message flags]
-              (throw (RuntimeException. "Really should enable sending integers")))))
+     (send socket message :no-block)))
 
 (defmethod send :default
   ([#^ZMQ$Socket socket message flags]
@@ -222,7 +217,7 @@ FIXME: Fork that repo, add this, send a Pull Request."
      (send socket "clojure/edn", :send-more)
      (send socket (str message) flags))
   ([#^ZMQ$Socket socket message]
-     (send socket message ZMQ/NOBLOCK)))
+     (send socket message :no-block)))
 
 (defn send-partial [#^ZMQ$Socket socket message]
   "I'm seeing this as a way to send all the messages in an envelope, except 
@@ -249,34 +244,52 @@ It totally falls apart when I'm just trying to send a string."
 
 (defn raw-recv
   ([#^ZMQ$Socket socket flags]
-     (.recv socket flags))
+     (println "Top of raw-recv")
+     (let [flags (flags->const flags)]
+       (println "Receiving from socket: " flags)
+       (.recv socket flags)))
   ([#^ZMQ$Socket socket]
+     (println "Parameterless raw-recv")
      (raw-recv socket :dont-wait)))
 
 (defn bit-array->string [bs]
   ;; Credit:
   ;; http://stackoverflow.com/a/7181711/114334
-  apply str (map #(char (bit-and % 255)) bs))
+  (apply str (map #(char (bit-and % 255)) bs)))
 
 (defn recv
   "For receiving non-binary messages.
 Strings are the most obvious alternative.
 More importantly (probably) is EDN."
   ([#^ZMQ$Socket socket flags]
-     (let [binary (raw-recv socket flags)
-           s (bit-array->string binary)]
-       (if (and (.hasReceiveMore socket)
-                ;; FIXME: No magic numbers!
-                (= s "clojure/edn"))
-         (let [actual-binary (raw-recv socket :dont-wait)
-               actual-content (bit-array->string actual-binary)]
-           ;; FIXME: Really should loop and build up a sequence.
-           ;; Absolutely nothing says this will be transmitted one
-           ;; sequence at a time.
-           ;; Well, except that doing that is purposefully
-           ;; difficult.
-           (edn/read-string actual-content))
-         s))))
+     ;; I am getting here.
+     ;; Well...once upon a time I was.
+     (println "\tListening. Flags: " flags)
+     ;; And then apparently hanging here.
+     ;; Well, except that I've successfully set this up to be non-blocking.
+     ;; which means I'm getting a nil.
+     (let [binary (raw-recv socket flags)]
+       (println "\tRaw:\n" binary)
+       (let
+           [s (bit-array->string binary)]
+           (println "Received:\n" s)
+           (if (and (.hasReceiveMore socket)
+                    ;; FIXME: No magic numbers!
+                    (= s "clojure/edn"))
+             (do
+               (println "Should be more pieces on the way")
+               (let [actual-binary (raw-recv socket :dont-wait)
+                     actual-content (bit-array->string actual-binary)]
+                 (println "Actual message:\n" actual-content)
+                 ;; FIXME: Really should loop and build up a sequence.
+                 ;; Absolutely nothing says this will be transmitted one
+                 ;; sequence at a time.
+                 ;; Well, except that doing that is purposefully
+                 ;; difficult.
+                 (edn/read-string actual-content)))
+             s))))
+  ([#^ZMQ$Socket socket]
+     (recv socket :dont-wait)))
 
 (defn recv-all
   "Receive all available message parts.
@@ -293,6 +306,9 @@ A: Absolutely. May want to block or not."
      ;; FIXME: Is this actually the flag I want?
      (recv-all socket (const :send-more))))
 
+;; I strongly suspect these next few methods are the original
+;; that I've re-written above.
+;; FIXME: Verify that. See what (if anything) is worth saving.
 (defn recv-str
   ([#^ZMQ$Socket socket]
       (-> socket recv String. .trim))

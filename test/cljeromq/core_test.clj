@@ -12,18 +12,23 @@
                (core/bind receiver url)
                (core/connect sender url)
 
+               (println "Starting tests")
+
                (fact "Transmit string"
                      (let [msg "xbcAzy"]
+                       (println "Sending")
                        (core/send sender msg)
+                       (println "Receiving")
                        (let [received (core/recv receiver)]
                          received => msg)))
+               (println "String sent and received")
 
                (fact "Transmit keyword"
                      (let [msg :message]
                        (println "Sending " msg)
-                       (core/send sender msg)
+                       (core/send receiver msg)
                        (println msg " sent")
-                       (let [received (core/recv receiver)]
+                       (let [received (core/recv sender)]
                          msg => received)))
 
                (fact "Transmit sequence"
@@ -34,8 +39,8 @@
 
                (fact "Transmit integer"
                      (let [msg 1000]
-                       (core/send sender msg)
-                       (let [received (core/raw-recv receiver)]
+                       (core/send receiver msg)
+                       (let [received (core/raw-recv sender)]
                          msg => received)))
 
                (fact "Transmit float"
@@ -46,8 +51,8 @@
 
                (fact "Transmit big integer"
                      (let [msg 1000M]
-                       (core/send sender msg)
-                       (let [received (core/raw-recv receiver)]
+                       (core/send receiver msg)
+                       (let [received (core/raw-recv sender)]
                          msg => received)))
 
                (future-fact "Transmit multiple sequences"
