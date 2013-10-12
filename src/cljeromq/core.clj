@@ -221,6 +221,16 @@ socket options."
   ([#^ZMQ$Socket socket #^String message]
      (send socket message :dont-wait)))
 
+(defmethod send Long
+  "How on earth is the receiver expected to know the difference
+between this and a String?
+This seems to combine the difficulty that I don't want to be
+handling serialization at this level with the fact that there's
+a lot of annoyingly duplicate boilerplate involved in these."
+  ([#^ZMQ$Socket socket #^Long message flags]
+     (.send #^ZMQSocket socket #^bytes message (flags->const flags)))
+  (throw (RuntimeException. "Not Implemented Yet")))
+
 (defmethod send :default
   ([#^ZMQ$Socket socket message flags]
      (trace "Trying to transmit:\n" message "\n(a"

@@ -44,19 +44,19 @@
                        (let [received (core/recv receiver)]
                          received => msg)))
 
-               (fact "Transmit integer"
+               (future-fact "Transmit integer"
                      (let [msg 1000]
                        (core/send receiver msg)
                        (let [received (core/raw-recv sender)]
                          received => msg)))
 
-               (fact "Transmit float"
+               (future-fact "Transmit float"
                      (let [msg Math/PI]
                        (core/send sender msg)
                        (let [received (core/raw-recv receiver)]
                          received => msg)))
 
-               (fact "Transmit big integer"
+               (future-fact "Transmit big integer"
                      (let [msg 1000M]
                        (core/send receiver msg)
                        (let [received (core/raw-recv sender)]
