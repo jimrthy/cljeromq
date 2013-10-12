@@ -37,6 +37,10 @@
                       ;; Non-blocking send/recv
                       :no-block ZMQ/NOBLOCK
                       :dont-wait ZMQ/DONTWAIT
+
+                      ;; Blocking (default...doesn't seem to be an 
+                      ;; associated named constant)
+                      :wait 0
                                 
                       ;; More message parts are coming
                       :sndmore ZMQ/SNDMORE
@@ -78,7 +82,10 @@
                                     
                           ;; Obsolete names for Router/Dealer
                           :xreq ZMQ/XREQ
-                          :xrep ZMQ/XREP}})
+                          :xrep ZMQ/XREP}
+            ;; Named magical numbers/strings
+            :flag
+            {:edn "clojure/edn"}})
 
 (defn control->const
   "Convert a control keyword to a ZMQ constant"
@@ -196,13 +203,15 @@ socket options."
 
 (defmethod send bytes
                  ([#^ZMQ$Socket socket #^bytes message flags]
-                    (.send socket message (flags->const flags))))
+                    (.send socket message (flags->const flags)))
+                 ([#^ZMQ$Socket socket #^bytes message]
+                    (.send socket message (flags->const :dont-wait))))
 
 (defmethod send String
   ([#^ZMQ$Socket socket #^String message flags]
      (.send #^ZMQ$Socket socket #^bytes (.getBytes message) (flags->const flags)))
   ([#^ZMQ$Socket socket #^String message]
-     (send socket message :no-block)))
+     (send socket message :dont-wait)))
 
 (defmethod send :default
   ([#^ZMQ$Socket socket message flags]
@@ -214,10 +223,10 @@ socket options."
      ;; The messaging layer really shouldn't be responsible for
      ;; serialization at all, but it makes sense to at least start
      ;; this out here.
-     (send socket "clojure/edn", :send-more)
+     (send socket (-> const :flag :edn), :send-more)
      (send socket (str message) flags))
   ([#^ZMQ$Socket socket message]
-     (send socket message :no-block)))
+     (send socket message :dont-wait)))
 
 (defn send-partial [#^ZMQ$Socket socket message]
   "I'm seeing this as a way to send all the messages in an envelope, except 
@@ -250,7 +259,7 @@ It totally falls apart when I'm just trying to send a string."
        (.recv socket flags)))
   ([#^ZMQ$Socket socket]
      (println "Parameterless raw-recv")
-     (raw-recv socket :dont-wait)))
+     (raw-recv socket :wait)))
 
 (defn bit-array->string [bs]
   ;; Credit:
@@ -274,8 +283,7 @@ More importantly (probably) is EDN."
            [s (bit-array->string binary)]
            (println "Received:\n" s)
            (if (and (.hasReceiveMore socket)
-                    ;; FIXME: No magic numbers!
-                    (= s "clojure/edn"))
+                    (= s (-> const :flag :edn)))
              (do
                (println "Should be more pieces on the way")
                (let [actual-binary (raw-recv socket :dont-wait)

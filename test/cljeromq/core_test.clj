@@ -16,10 +16,10 @@
 
                (fact "Transmit string"
                      (let [msg "xbcAzy"]
-                       (println "Sending")
+                       (println "Sending " msg)
                        (core/send sender msg)
                        (println "Receiving")
-                       (let [received (core/recv receiver)]
+                       (let [received (core/recv receiver :wait)]
                          received => msg)))
                (println "String sent and received")
 
