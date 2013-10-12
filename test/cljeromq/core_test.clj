@@ -1,5 +1,7 @@
 (ns cljeromq.core-test
-  (:require [cljeromq.core :as core])
+  (:require [cljeromq.core :as core]
+            [taoensso.timbre :as timbre
+             :refer (trace debug info warn error fatal spy with-log-level)])
   (:use midje.sweet))
 
 (facts "Basic functionality"
@@ -62,22 +64,30 @@
                        (let [received (core/raw-recv sender)]
                          received => msg)))
 
-               (future-fact "Transmit multiple sequences"
-                            ;; Q: What could this look like?
-                            )
+               (comment (future-fact "Transmit multiple sequences"
+                                     ;; Q: What could this look like?
+                                     ))
                (finally (core/close receiver)
                         (core/close sender))))
            (finally (core/terminate ctx)))))
 
 (facts "Basic message exchange with macros"
+       (trace "Setting up context")
        (core/with-context [ctx 1]
+         (trace "Setting up receiver")
+         (comment (throw (RuntimeException. "Am I getting here?")))
          (core/with-socket [receiver ctx :rep]
-           receiver => receiver
+           (comment) (fact "Macro created local"
+                           receiver => receiver)
+           (trace "Receiver: " receiver)
 
            ;; TODO: Don't hard-code this port number
            (let [url  "tcp://localhost:10101"]
+             (trace "Binding receiver")
              (core/bind receiver url)
+             (trace "Setting up sender")
              (core/with-socket [sender ctx :req]
+               (trace "Connecting sender")
                (core/connect sender url)
 
                (fact "Connected"
@@ -86,11 +96,11 @@
                (fact "Transmit string"
                      (let [msg "abcxYz1"]
                        (core/send sender msg)
-                       (let [result (core/recv receiever)]
+                       (let [result (core/recv receiver)]
                          msg => result)))
 
                (fact "Transmit keyword"
                      (let [msg :something]
-                       (core/send sender msg)
-                       (let [result (core/recv receiever)]
+                       (core/send receiver msg)
+                       (let [result (core/recv sender)]
                          msg => result))))))))

@@ -25,7 +25,7 @@
 ;; FIXME: Debug only!
 ;; Q: Set up real logging options?
 ;; A: Really should let whatever uses this library configure that.
-(timbre/set-level! :trace)
+(comment (timbre/set-level! :trace))
 
 (defn context [threads]
   (ZMQ/context threads))
@@ -222,14 +222,15 @@ socket options."
      (send socket message :dont-wait)))
 
 (defmethod send Long
+  ([#^ZMQ$Socket socket #^Long message flags]
   "How on earth is the receiver expected to know the difference
 between this and a String?
 This seems to combine the difficulty that I don't want to be
 handling serialization at this level with the fact that there's
 a lot of annoyingly duplicate boilerplate involved in these."
-  ([#^ZMQ$Socket socket #^Long message flags]
-     (.send #^ZMQSocket socket #^bytes message (flags->const flags)))
-  (throw (RuntimeException. "Not Implemented Yet")))
+     (.send #^ZMQ$Socket socket #^bytes message (flags->const flags)))
+  ([#^ZMQ$Socket socket #^Long message]
+     (send Long message :dont-wait)))
 
 (defmethod send :default
   ([#^ZMQ$Socket socket message flags]
