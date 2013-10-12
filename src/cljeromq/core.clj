@@ -15,10 +15,17 @@
   (:refer-clojure :exclude [send])
   (:require [byte-transforms :as bt]
             [clojure.edn :as edn]
+            [taoensso.timbre :as timbre
+             :refer (trace debug info warn error fatal spy with-log-level)]
             [zeromq.zmq :as mq])
   (:import [org.zeromq ZMQ ZMQ$Context ZMQ$Socket ZMQ$Poller ZMQQueue])
   (:import (java.util Random)
            (java.nio ByteBuffer)))
+
+;; FIXME: Debug only!
+;; Q: Set up real logging options?
+;; A: Really should let whatever uses this library configure that.
+(timbre/set-level! :trace)
 
 (defn context [threads]
   (ZMQ/context threads))
@@ -90,7 +97,7 @@
 (defn control->const
   "Convert a control keyword to a ZMQ constant"
   [key]
-  (println "Extracting " key)
+  (trace "Extracting " key)
   ((const :control) key))
 
 (defn sock->const
@@ -209,13 +216,14 @@ socket options."
 
 (defmethod send String
   ([#^ZMQ$Socket socket #^String message flags]
+     (trace "Sending string:\n" message)
      (.send #^ZMQ$Socket socket #^bytes (.getBytes message) (flags->const flags)))
   ([#^ZMQ$Socket socket #^String message]
      (send socket message :dont-wait)))
 
 (defmethod send :default
   ([#^ZMQ$Socket socket message flags]
-     (println "Trying to transmit:\n" message "\n(a "
+     (trace "Trying to transmit:\n" message "\n(a"
               (class message) ")")
      ;; For now, assume that we'll only be transmitting something
      ;; that can be printed out in a form that can be read back in
@@ -253,12 +261,12 @@ It totally falls apart when I'm just trying to send a string."
 
 (defn raw-recv
   ([#^ZMQ$Socket socket flags]
-     (println "Top of raw-recv")
+     (trace "Top of raw-recv")
      (let [flags (flags->const flags)]
-       (println "Receiving from socket: " flags)
+       (trace "Receiving from socket (flags:" flags ")")
        (.recv socket flags)))
   ([#^ZMQ$Socket socket]
-     (println "Parameterless raw-recv")
+     (trace "Parameterless raw-recv")
      (raw-recv socket :wait)))
 
 (defn bit-array->string [bs]
@@ -297,7 +305,7 @@ More importantly (probably) is EDN."
                  (edn/read-string actual-content)))
              s))))
   ([#^ZMQ$Socket socket]
-     (recv socket :dont-wait)))
+     (recv socket :wait)))
 
 (defn recv-all
   "Receive all available message parts.

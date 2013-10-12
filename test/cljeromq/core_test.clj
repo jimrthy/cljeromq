@@ -13,47 +13,54 @@
                (core/connect sender url)
 
                (println "Starting tests")
+               ;; TODO: Really should split these up.
+               ;; Configuring the context and sockets is part of setUp.
+               ;; That would allow tests to proceed after a previous
+               ;; one fails.
+               ;; OTOH: Really should be using :dealer and :router...
+               ;; except that, for this scenario, :req and :rep are
+               ;; actually exactly what I want, once this actually works.
 
                (fact "Transmit string"
                      (let [msg "xbcAzy"]
-                       (println "Sending " msg)
+                       (comment (println "Sending " msg))
                        (core/send sender msg)
-                       (println "Receiving")
+                       (comment (println "Receiving"))
                        (let [received (core/recv receiver :wait)]
                          received => msg)))
-               (println "String sent and received")
+               (comment (println "String sent and received"))
 
                (fact "Transmit keyword"
                      (let [msg :message]
-                       (println "Sending " msg)
+                       (println "Sending: " msg)
                        (core/send receiver msg)
-                       (println msg " sent")
+                       (println msg " -- sent")
                        (let [received (core/recv sender)]
-                         msg => received)))
+                         received => msg)))
 
                (fact "Transmit sequence"
                      (let [msg (list :a 3 "abc")]
                        (core/send sender msg)
                        (let [received (core/recv receiver)]
-                         msg => received)))
+                         received => msg)))
 
                (fact "Transmit integer"
                      (let [msg 1000]
                        (core/send receiver msg)
                        (let [received (core/raw-recv sender)]
-                         msg => received)))
+                         received => msg)))
 
                (fact "Transmit float"
                      (let [msg Math/PI]
                        (core/send sender msg)
                        (let [received (core/raw-recv receiver)]
-                         msg => received)))
+                         received => msg)))
 
                (fact "Transmit big integer"
                      (let [msg 1000M]
                        (core/send receiver msg)
                        (let [received (core/raw-recv sender)]
-                         msg => received)))
+                         received => msg)))
 
                (future-fact "Transmit multiple sequences"
                             ;; Q: What could this look like?

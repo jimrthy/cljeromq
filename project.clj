@@ -4,6 +4,7 @@
   :license {:name "Lesser General Public License"
             :url "http://www.gnu.org/licenses/lgpl.html"}
   :dependencies [[byte-transforms "0.1.0"]
+                 [com.taoensso/timbre "2.6.2"]
                  [org.clojure/clojure "1.5.1"]
                  ;; Switching to jeromq for now, at least until
                  ;; zeromq 4 is released.
