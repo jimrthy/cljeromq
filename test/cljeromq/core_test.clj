@@ -25,6 +25,34 @@
                        (println msg " sent")
                        (let [received (core/recv receiver)]
                          msg => received)))
+
+               (fact "Transmit sequence"
+                     (let [msg (list :a 3 "abc")]
+                       (core/send sender msg)
+                       (let [received (core/recv receiver)]
+                         msg => received)))
+
+               (fact "Transmit integer"
+                     (let [msg 1000]
+                       (core/send sender msg)
+                       (let [received (core/raw-recv receiver)]
+                         msg => received)))
+
+               (fact "Transmit float"
+                     (let [msg Math/PI]
+                       (core/send sender msg)
+                       (let [received (core/raw-recv receiver)]
+                         msg => received)))
+
+               (fact "Transmit big integer"
+                     (let [msg 1000M]
+                       (core/send sender msg)
+                       (let [received (core/raw-recv receiver)]
+                         msg => received)))
+
+               (future-fact "Transmit multiple sequences"
+                            ;; Q: What could this look like?
+                            )
                (finally (core/close receiver)
                         (core/close sender))))
            (finally (core/terminate ctx)))))

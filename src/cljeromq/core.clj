@@ -13,8 +13,9 @@
 
 (ns cljeromq.core
   (:refer-clojure :exclude [send])
-  (:require [zeromq.zmq :as mq]
-            [byte-transforms :as bt])
+  (:require [byte-transforms :as bt]
+            [clojure.edn :as edn]
+            [zeromq.zmq :as mq])
   (:import [org.zeromq ZMQ ZMQ$Context ZMQ$Socket ZMQ$Poller ZMQQueue])
   (:import (java.util Random)
            (java.nio ByteBuffer)))
@@ -192,28 +193,34 @@ FIXME: Fork that repo, add this, send a Pull Request."
   ([#^ZMQ$Socket socket #^String message]
      (send socket message ZMQ/NOBLOCK)))
 
-(defmethod send clojure.lang.Keyword
-  ([#^ZMQ$Socket socket #^clojure.lang.Keyword word flags]
-     ;; This seems more than a little problematic.
-     ;; At the very least, it seems like I should be sending
-     ;; two frames. Let the first identify the format
-     ;; (EDN). Seems worthy of more thought.
-     (send (str word) flags))
-  ;; FIXME: This next line seems more than a little redundant.
-  ;; (It seems like default should handle it just fine)
-  ([#^ZMQ$Socket socket #^clojure.lang.Keyword word]
-     (send socket word ZMQ/NOBLOCK)))
+(comment (defmethod send clojure.lang.Keyword
+           ([#^ZMQ$Socket socket #^clojure.lang.Keyword word flags]
+              ;; This seems more than a little problematic.
+              ;; At the very least, it seems like I should be sending
+              ;; two frames. Let the first identify the format
+              ;; (EDN). Seems worthy of more thought.
+              (send (str word) flags))
+           ;; FIXME: This next line seems more than a little redundant.
+           ;; (It seems like default should handle it just fine)
+           ([#^ZMQ$Socket socket #^clojure.lang.Keyword word]
+              (send socket word ZMQ/NOBLOCK)))
 
-(defmethod send Long
-  ([#^ZMQ$Socket socket message flags]
-     (throw (RuntimeException. "Really should enable sending integers"))))
+         (defmethod send Long
+           ([#^ZMQ$Socket socket message flags]
+              (throw (RuntimeException. "Really should enable sending integers")))))
 
 (defmethod send :default
   ([#^ZMQ$Socket socket message flags]
      (println "Trying to transmit:\n" message "\n(a "
               (class message) ")")
-     ;; Odds are, this is going to fail.
-     (.send socket (bt/encode message :base64) flags))
+     ;; For now, assume that we'll only be transmitting something
+     ;; that can be printed out in a form that can be read back in
+     ;; using eval.
+     ;; The messaging layer really shouldn't be responsible for
+     ;; serialization at all, but it makes sense to at least start
+     ;; this out here.
+     (send socket "clojure/edn", :send-more)
+     (send socket (str message) flags))
   ([#^ZMQ$Socket socket message]
      (send socket message ZMQ/NOBLOCK)))
 
@@ -240,14 +247,41 @@ It totally falls apart when I'm just trying to send a string."
   [#^ZMQ$Socket socket #^String name]
   (.setIdentity socket (.getBytes name)))
 
-(defn recv
+(defn raw-recv
   ([#^ZMQ$Socket socket flags]
      (.recv socket flags))
   ([#^ZMQ$Socket socket]
-     (recv socket 0)))
+     (raw-recv socket :dont-wait)))
+
+(defn bit-array->string [bs]
+  ;; Credit:
+  ;; http://stackoverflow.com/a/7181711/114334
+  apply str (map #(char (bit-and % 255)) bs))
+
+(defn recv
+  "For receiving non-binary messages.
+Strings are the most obvious alternative.
+More importantly (probably) is EDN."
+  ([#^ZMQ$Socket socket flags]
+     (let [binary (raw-recv socket flags)
+           s (bit-array->string binary)]
+       (if (and (.hasReceiveMore socket)
+                ;; FIXME: No magic numbers!
+                (= s "clojure/edn"))
+         (let [actual-binary (raw-recv socket :dont-wait)
+               actual-content (bit-array->string actual-binary)]
+           ;; FIXME: Really should loop and build up a sequence.
+           ;; Absolutely nothing says this will be transmitted one
+           ;; sequence at a time.
+           ;; Well, except that doing that is purposefully
+           ;; difficult.
+           (edn/read-string actual-content))
+         s))))
 
 (defn recv-all
-  "Does it make sense to accept flags here?"
+  "Receive all available message parts.
+Q: Does it make sense to accept flags here?
+A: Absolutely. May want to block or not."
   ([#^ZMQ$Socket socket flags]
       (loop [acc []]
         (let [msg (recv socket flags)
