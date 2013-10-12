@@ -292,22 +292,22 @@ More importantly (probably) is EDN."
   ([#^ZMQ$Socket socket flags]
      ;; I am getting here.
      ;; Well...once upon a time I was.
-     (println "\tListening. Flags: " flags)
+     (trace "\tListening. Flags: " flags)
      ;; And then apparently hanging here.
      ;; Well, except that I've successfully set this up to be non-blocking.
      ;; which means I'm getting a nil.
      (let [binary (raw-recv socket flags)]
-       (println "\tRaw:\n" binary)
+       (trace "\tRaw:\n" binary)
        (let
            [s (bit-array->string binary)]
-           (println "Received:\n" s)
+           (trace "Received:\n" s)
            (if (and (.hasReceiveMore socket)
                     (= s (-> const :flag :edn)))
              (do
-               (println "Should be more pieces on the way")
+               (trace "Should be more pieces on the way")
                (let [actual-binary (raw-recv socket :dont-wait)
                      actual-content (bit-array->string actual-binary)]
-                 (println "Actual message:\n" actual-content)
+                 (trace "Actual message:\n" actual-content)
                  ;; FIXME: Really should loop and build up a sequence.
                  ;; Absolutely nothing says this will be transmitted one
                  ;; sequence at a time.

@@ -14,7 +14,7 @@
                (core/bind receiver url)
                (core/connect sender url)
 
-               (println "Starting tests")
+               (info "Starting tests")
                ;; TODO: Really should split these up.
                ;; Configuring the context and sockets is part of setUp.
                ;; That would allow tests to proceed after a previous
@@ -25,18 +25,18 @@
 
                (fact "Transmit string"
                      (let [msg "xbcAzy"]
-                       (comment (println "Sending " msg))
+                       (comment (trace "Sending " msg))
                        (core/send sender msg)
-                       (comment (println "Receiving"))
+                       (comment (trace "Receiving"))
                        (let [received (core/recv receiver :wait)]
                          received => msg)))
-               (comment (println "String sent and received"))
+               (comment (trace "String sent and received"))
 
                (fact "Transmit keyword"
                      (let [msg :message]
-                       (println "Sending: " msg)
+                       (trace "Sending: " msg)
                        (core/send receiver msg)
-                       (println msg " -- sent")
+                       (trace msg " -- sent")
                        (let [received (core/recv sender)]
                          received => msg)))
 
@@ -75,10 +75,9 @@
        (trace "Setting up context")
        (core/with-context [ctx 1]
          (trace "Setting up receiver")
-         (comment (throw (RuntimeException. "Am I getting here?")))
          (core/with-socket [receiver ctx :rep]
-           (comment) (fact "Macro created local"
-                           receiver => receiver)
+           (fact "Macro created local"
+                 receiver => receiver)
            (trace "Receiver: " receiver)
 
            ;; TODO: Don't hard-code this port number
