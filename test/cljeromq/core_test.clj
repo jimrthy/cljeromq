@@ -67,9 +67,9 @@
                (comment (future-fact "Transmit multiple sequences"
                                      ;; Q: What could this look like?
                                      ))
-               (finally (core/close receiver)
-                        (core/close sender))))
-           (finally (core/terminate ctx)))))
+               (finally (core/close! receiver)
+                        (core/close! sender))))
+           (finally (core/terminate! ctx)))))
 
 (facts "Basic message exchange with macros"
        (trace "Setting up context")

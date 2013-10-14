@@ -30,14 +30,14 @@
 (defn context [threads]
   (ZMQ/context threads))
 
-(defn terminate [#^ZMQ$Context ctx]
+(defn terminate! [#^ZMQ$Context ctx]
   (.term ctx))
 
 (defmacro with-context
   [[id threads] & body]
   `(let [~id (context ~threads)]
      (try ~@body
-          (finally (terminate ~id)))))
+          (finally (terminate! ~id)))))
 
 (def const {
             :control {
@@ -110,13 +110,13 @@
   (let [real-type (sock->const type)]
     (.socket context real-type)))
 
-(defn close [#^ZMQ$Socket s]
+(defn close! [#^ZMQ$Socket s]
   (.close s))
 
 (defmacro with-socket [[name context type] & body]
   `(let [~name (socket ~context ~type)]
      (try ~@body
-          (finally (close ~name)))))
+          (finally (close! ~name)))))
 
 (defmacro with-poller [[poller-name context socket] & body]
   "Cut down on some of the boilerplate around pollers.
@@ -395,11 +395,6 @@ first place. It's missing the point more than a little if it's already
 in the default language binding." 
   [poller time-out & keys]
   (mq/check-poller poller time-out keys))
-
-(defn close 
-  "Yeah, this seems more than a little stupid"
-  [sock]
-  (.close sock))
 
 (defn register-in
   "Register a listening socket to poll on." 
