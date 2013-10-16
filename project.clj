@@ -16,7 +16,7 @@
   :profiles {:dev {:dependencies [[midje "1.5.1"]]}}
   ;; TODO: Want to set *warn-on-reflection* to true, at least for unit tests.
   ;; Probably also for general dev.
-  :repl-options {:init-ns cljeromq.core}
+  :repl-options {:init-ns user}
   :repositories {;"sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"
                  "sonatype-nexus-snapshots" "https://oss.sonatype.org/content/repositories/snapshots"
                  })

@@ -10,4 +10,6 @@
 #    -Dversion=0.1.0-SNAPSHOT -Dpackaging=jar \
 #    -Dfile=target/cljeromq-0.1.0-SNAPSHOT-standalone.jar -Durl=file:/home/james/repo
 
+# Q: Do I really want to uberjar this? Or would a simple jar be sufficient?
+lein uberjar
 lein localrepo install target/cljeromq-0.1.0-SNAPSHOT-standalone.jar /jimrthy/cljeromq 0.1.0-SNAPSHOT
