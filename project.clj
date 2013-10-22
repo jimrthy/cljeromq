@@ -11,7 +11,8 @@
                  ;; FIXME: That's out now. Use it!!
                  ;;[org.zeromq/jzmq "2.2.0"]
                  [org.jeromq/jeromq "0.3.0-SNAPSHOT"]
-                 [org.zeromq/cljzmq "0.1.1" :exclusions [org.zeromq/jzmq]]]
+                 [org.zeromq/cljzmq "0.1.1" :exclusions [org.zeromq/jzmq]]
+                 [spyscope "0.1.3"]]
   :plugins [[lein-midje "3.0.0"]]
   :profiles {:dev {:dependencies [[midje "1.5.1"]]}}
   ;; TODO: Want to set *warn-on-reflection* to true, at least for unit tests.
