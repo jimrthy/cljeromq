@@ -120,10 +120,12 @@
 
 (defmacro with-poller [[poller-name context socket] & body]
   "Cut down on some of the boilerplate around pollers.
-What's left still seems pretty annoying."
+What's left still seems pretty annoying.
+Of course, a big part of the point to real pollers is
+dealing with multiple sockets"
   ;; I don't think I actually need this sort of gensym
   ;; magic with clojure, do I?
-  ;; Not really...but the autogensyms *do* need to happen inside
+  ;; Not really...but the autogensyms *do* need to happen
   ;; inside the backtick.
   ;; It's pretty blatant that I haven't had any time to
   ;; do anything that resembles testing this code.
@@ -318,6 +320,10 @@ More importantly (probably) is EDN."
   ([#^ZMQ$Socket socket]
      (recv socket :wait)))
 
+(defn recv-more?
+  [socket]
+  (.hasReceiveMore socket))
+
 (defn recv-all
   "Receive all available message parts.
 Q: Does it make sense to accept flags here?
@@ -326,7 +332,7 @@ A: Absolutely. May want to block or not."
       (loop [acc []]
         (let [msg (recv socket flags)
               result (conj acc msg)]
-          (if (.hasReceiveMore socket)
+          (if (recv-more? socket)
             (recur result)
             result))))
   ([#^ZMQ$Socket socket]
@@ -380,14 +386,14 @@ There doesn't seem any good reason to put effort into hiding it."
 (def poll-out ZMQ$Poller/POLLOUT)
 
 (defn poll
-  "FIXME: This is just a wrapper around the base handler.
+  "Returns the number of sockets available in the poller
+FIXME: This is just a wrapper around the base handler.
 It feels dumb and more than a little pointless. Aside from the
-fact that I think it's wrong.
-At this point, I just want to get pieces to compile so I can
-call it a night...
-what does that say about the dynamic/static debate?"
-  [poller]
-  (mq/poll poller))
+fact that I think it's wrong."
+  ([poller]
+     (mq/poll poller))
+  ([poller timeout]
+     (mq/poll poller timeout)))
 
 (defn check-poller 
   "This sort of new-fangledness is why I started this library in the

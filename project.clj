@@ -14,7 +14,10 @@
                  [org.zeromq/cljzmq "0.1.1" :exclusions [org.zeromq/jzmq]]
                  [spyscope "0.1.3"]]
   :plugins [[lein-midje "3.0.0"]]
-  :profiles {:dev {:dependencies [[midje "1.5.1"]]}}
+  :profiles {:dev {:dependencies [[midje "1.6.0"]
+                                  [org.clojure/tools.namespace "0.2.4"]
+                                  [org.clojure/java.classpath "0.2.1"]]
+                   :source-paths ["dev"]}}
   ;; TODO: Want to set *warn-on-reflection* to true, at least for unit tests.
   ;; Probably also for general dev.
   :repl-options {:init-ns user}
