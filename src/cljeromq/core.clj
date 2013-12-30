@@ -118,27 +118,6 @@
      (try ~@body
           (finally (close! ~name)))))
 
-(defmacro with-poller [[poller-name context socket] & body]
-  "Cut down on some of the boilerplate around pollers.
-What's left still seems pretty annoying.
-Of course, a big part of the point to real pollers is
-dealing with multiple sockets"
-  ;; I don't think I actually need this sort of gensym
-  ;; magic with clojure, do I?
-  ;; Not really...but the autogensyms *do* need to happen
-  ;; inside the backtick.
-  ;; It's pretty blatant that I haven't had any time to
-  ;; do anything that resembles testing this code.
-  (let [name# poller-name
-        ctx# context
-        s# socket]
-    `(let [~name# (mq/poller ~ctx#)]
-       (mq/register ~name# ~s# :pollin :pollerr)
-       (try
-         ~@body
-         (finally
-           (mq/unregister ~name# ~s#))))))
-
 (comment (defn queue
   "Forwarding device for request-reply messaging.
 cljzmq doesn't seem to have an equivalent.
@@ -382,8 +361,31 @@ There doesn't seem any good reason to put effort into hiding it."
   [socket-count]
   (ZMQ$Poller. socket-count))
 
-(def poll-in ZMQ$Poller/POLLIN)
-(def poll-out ZMQ$Poller/POLLOUT)
+;; These next two should be keywords
+(comment
+  (def poll-in ZMQ$Poller/POLLIN)
+  (def poll-out ZMQ$Poller/POLLOUT))
+
+(defmacro with-poller [[poller-name context socket] & body]
+  "Cut down on some of the boilerplate around pollers.
+What's left still seems pretty annoying.
+Of course, a big part of the point to real pollers is
+dealing with multiple sockets"
+  ;; I don't think I actually need this sort of gensym
+  ;; magic with clojure, do I?
+  ;; Not really...but the autogensyms *do* need to happen
+  ;; inside the backtick.
+  ;; It's pretty blatant that I haven't had any time to
+  ;; do anything that resembles testing this code.
+  (let [name# poller-name
+        ctx# context
+        s# socket]
+    `(let [~name# (mq/poller ~ctx#)]
+       (mq/register ~name# ~s# :pollin :pollerr)
+       (try
+         ~@body
+         (finally
+           (mq/unregister ~name# ~s#))))))
 
 (defn poll
   "Returns the number of sockets available in the poller
@@ -397,23 +399,26 @@ fact that I think it's wrong."
 
 (defn check-poller 
   "This sort of new-fangledness is why I started this library in the
-first place. It's missing the point more than a little if it's already
-in the default language binding." 
+first place. I think it's missing the point more than a little if it's already
+in the default language binding.
+
+Not that this is actually doing *anything*
+different."
   [poller time-out & keys]
   (mq/check-poller poller time-out keys))
 
-(defn register-in
-  "Register a listening socket to poll on." 
+(defn register-socket-in-poller!
+  "Register a socket to poll on." 
   [#^ZMQ$Socket socket #^ZMQ$Poller poller]
-  (.register poller socket poll-in))
+  (.register poller socket :poll-in))
 
-(defn socket-poller-in
+(defn socket-poller-in!
   "Attach a new poller to a seq of sockets.
 Honestly, should be smarter and just let me poll on a single socket."
   [sockets]
   (let [checker (poller (count sockets))]
     (doseq [s sockets]
-      (register-in s checker))
+      (register-socket-in-poller! s checker))
     checker))
 
 (defn dump
