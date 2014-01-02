@@ -27,7 +27,9 @@ e.g.
       (throw (RuntimeException. "Creating curve keypair failed")))))
 
 (defn make-socket-a-server!
-  "Adjust sock so that it's ready to serve CURVE-encrypted messages"
+  "Adjust sock so that it's ready to serve CURVE-encrypted messages.
+Documentation seems fuzzy about whether or not it also needs to set
+the public key."
   [sock private-key]
   (jna/invoke Integer zmq/zmq_setsockopt sock
               (K/option->const :curve-server)
@@ -36,7 +38,10 @@ e.g.
   (jna/invoke Integer zmq/zmq_setsockopt sock
               (K/option->const :curve-server-key)
               private-key
-              40))
+              40)
+  ;; official tests also set the ZMQ_IDENTITY option.
+  ;; Q: What does that actually do?
+  )
 
 (defn prepare-client-socket-for-server!
   "Adjust socket options to make it suitable for connecting as
@@ -60,5 +65,33 @@ a client to a server identified by server-key"
               40))
 
 (defn server-socket
-  "Create a new socket suitable for use as a CURVE server"
-  [ctx type private-key])
+  "Create a new socket suitable for use as a CURVE server.
+There isn't really anything interesting here. Create a new
+socket of the specified time then run it through
+make-socket-a-server!"
+  [ctx type private-key]  
+  (throw (RuntimeException. "Get this written")))
+
+(defn build-authenticator
+  "Used for ZAP to verify clients"
+  []
+  ;; This isn't actually part of libzmq. It's in czmq.
+  ;; Q: Require that or re-implement?
+  ;; Q: For that matter, which is more authoritative?
+  ;; A: czmq is a convenience layer atop libzmq.
+  ;; Other language bindings are expected to provide
+  ;; something along the same lines.
+  (throw RuntimeException. "What happened to zauth_new?"))
+
+;; TODO:
+;; Need to pull certs from a ZPL-format file
+;; (ZMQ RFC4)
+;; These files have 2 sections: metadata and curve
+;; metadata consists of name=value pairs (1/line)
+;; curve has a public-key=key and (possibly) a
+;; secret-key=keyvalue.
+;; keyvalues are Z85-encoded CURVE keys
+;; They look at least vaguely like YAML files.
+
+;; Can build cert files with czmq's addons/makecert
+;; program.
