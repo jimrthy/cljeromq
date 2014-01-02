@@ -5,6 +5,7 @@
             :url "http://www.gnu.org/licenses/lgpl.html"}
   :dependencies [[byte-transforms "0.1.0"]
                  [com.taoensso/timbre "2.6.2"]
+                 [net.n01se/clojure-jna "1.0.0"]
                  [org.clojure/clojure "1.5.1"]
                  ;; Switching to jeromq for now, at least until
                  ;; zeromq 4 is released.
@@ -18,8 +19,6 @@
                                   [org.clojure/tools.namespace "0.2.4"]
                                   [org.clojure/java.classpath "0.2.1"]]
                    :source-paths ["dev"]}}
-  ;; TODO: Want to set *warn-on-reflection* to true, at least for unit tests.
-  ;; Probably also for general dev.
   :repl-options {:init-ns user}
   :repositories {;"sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"
                  "sonatype-nexus-snapshots" "https://oss.sonatype.org/content/repositories/snapshots"

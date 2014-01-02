@@ -1,6 +1,3 @@
-;; Really intended as a higher-level wrapper layer over
-;; cljzmq.
-;;
 ;; Really need to add the license...this project is LGPL.
 ;; Q: Why?
 ;; A: Because the most restrictive license on which it
@@ -11,9 +8,17 @@
 ;; the 0mq people) to verify how this actually works in 
 ;; practice.
 
+;; TODO: What are the ramifications of using libraries that
+;; are both EPL and LGPL? AIUI, just using the library
+;; doesn't affect other libraries, unless the one you're using
+;; is GPL. Even then, that's supposed to be about code that's
+;; linked into your exe. That definitely seems like shaky
+;; ground. Then again, so does having this be LGPL.
+
 (ns cljeromq.core
   (:refer-clojure :exclude [send])
   (:require [byte-transforms :as bt]
+            [cljeromq.constants :as K]
             [clojure.edn :as edn]
             [taoensso.timbre :as timbre
              :refer (trace debug info warn error fatal spy with-log-level)]
@@ -21,6 +26,9 @@
   (:import [org.zeromq ZMQ ZMQ$Context ZMQ$Socket ZMQ$Poller ZMQQueue])
   (:import (java.util Random)
            (java.nio ByteBuffer)))
+
+;; Really intended as a higher-level wrapper layer over
+;; cljzmq.
 
 ;; FIXME: Debug only!
 ;; Q: Set up real logging options?
@@ -39,75 +47,9 @@
      (try ~@body
           (finally (terminate! ~id)))))
 
-(def const {
-            :control {
-                      ;; Non-blocking send/recv
-                      :no-block ZMQ/NOBLOCK
-                      :dont-wait ZMQ/DONTWAIT
-
-                      ;; Blocking (default...doesn't seem to be an 
-                      ;; associated named constant)
-                      :wait 0
-                                
-                      ;; More message parts are coming
-                      :sndmore ZMQ/SNDMORE
-                      :send-more ZMQ/SNDMORE}
-            
-            ;;; Socket types
-            :socket-type {
-                          ;; Request/Reply
-                          :req ZMQ/REQ
-                          :rep ZMQ/REP
-                                    
-                          ;; Publish/Subscribe
-                          :pub ZMQ/PUB
-                          :sub ZMQ/SUB
-                          
-                          ;; Extended Publish/Subscribe
-                          :x-pub ZMQ/XPUB
-                          :x-sub ZMQ/XSUB
-                          ;; Push/Pull
-                          
-                          :push ZMQ/PUSH
-                          :pull ZMQ/PULL
-
-                          ;; Internal 1:1
-                          :pair ZMQ/PAIR
-
-                          ;; Router/Dealer
-
-                          ;; Creates/consumes request-reply routing envelopes.
-                          ;; Lets you route messages to specific connections if you
-                          ;; know their identities.
-                          :router ZMQ/ROUTER
-                                    
-                          ;; Combined ventilator/sink.
-                          ;; Does load balancing on output and fair-queuing on input.
-                          ;; Can shuffle messages out to N nodes then shuffle the replies back.
-                          ;; Raw bidirectional async pattern.
-                          :dealer ZMQ/DEALER
-                                    
-                          ;; Obsolete names for Router/Dealer
-                          :xreq ZMQ/XREQ
-                          :xrep ZMQ/XREP}
-            ;; Named magical numbers/strings
-            :flag
-            {:edn "clojure/edn"}})
-
-(defn control->const
-  "Convert a control keyword to a ZMQ constant"
-  [key]
-  (trace "Extracting " key)
-  ((const :control) key))
-
-(defn sock->const
-  "Convert a socket keyword to a ZMQ constant"
-  [key]
-  ((const :socket-type) key))
-
 (defn socket
   [#^ZMQ$Context context type]
-  (let [real-type (sock->const type)]
+  (let [real-type (K/sock->const type)]
     (.socket context real-type)))
 
 (defn close! [#^ZMQ$Socket s]
@@ -181,24 +123,16 @@ FIXME: Fork that repo, add this, send a Pull Request."
 (defmulti send (fn [#^ZMQ$Socket socket message & flags]
                  (class message)))
 
-(defn flags->const ^long [flags]
-  "Use in conjunction with control-const to convert a series
-of/individual keyword into a logical-or'd flag to control
-socket options."
-  (if (seq? flags)
-    (reduce bit-or (map control->const flags))
-    (control->const flags)))
-
 (defmethod send bytes
                  ([#^ZMQ$Socket socket #^bytes message flags]
-                    (.send socket message (flags->const flags)))
+                    (.send socket message (K/flags->const flags)))
                  ([#^ZMQ$Socket socket #^bytes message]
-                    (.send socket message (flags->const :dont-wait))))
+                    (.send socket message (K/flags->const :dont-wait))))
 
 (defmethod send String
   ([#^ZMQ$Socket socket #^String message flags]
      (trace "Sending string:\n" message)
-     (.send #^ZMQ$Socket socket #^bytes (.getBytes message) (flags->const flags)))
+     (.send #^ZMQ$Socket socket #^bytes (.getBytes message) (K/flags->const flags)))
   ([#^ZMQ$Socket socket #^String message]
      (send socket message :dont-wait)))
 
@@ -209,7 +143,7 @@ between this and a String?
 This seems to combine the difficulty that I don't want to be
 handling serialization at this level with the fact that there's
 a lot of annoyingly duplicate boilerplate involved in these."
-     (.send #^ZMQ$Socket socket #^bytes message (flags->const flags)))
+     (.send #^ZMQ$Socket socket #^bytes message (K/flags->const flags)))
   ([#^ZMQ$Socket socket #^Long message]
      (send Long message :dont-wait)))
 
@@ -223,7 +157,7 @@ a lot of annoyingly duplicate boilerplate involved in these."
      ;; The messaging layer really shouldn't be responsible for
      ;; serialization at all, but it makes sense to at least start
      ;; this out here.
-     (send socket (-> const :flag :edn), :send-more)
+     (send socket (-> K/const :flag :edn), :send-more)
      (send socket (str message) flags))
   ([#^ZMQ$Socket socket message]
      (send socket message :dont-wait)))
@@ -233,7 +167,7 @@ a lot of annoyingly duplicate boilerplate involved in these."
 the last.
 Yes, it seems dumb, but it was convenient at one point.
 Honestly, that's probably a clue that this basic idea is just wrong."
-  (send socket message (const :send-more)))
+  (send socket message :send-more))
 
 (defn send-all [#^ZMQ$Socket socket messages]
   "At this point, I'm basically envisioning the usage here as something like HTTP.
@@ -254,7 +188,7 @@ It totally falls apart when I'm just trying to send a string."
 (defn raw-recv
   ([#^ZMQ$Socket socket flags]
      (trace "Top of raw-recv")
-     (let [flags (flags->const flags)]
+     (let [flags (K/flags->const flags)]
        (trace "Receiving from socket (flags:" flags ")")
        (.recv socket flags)))
   ([#^ZMQ$Socket socket]
@@ -283,7 +217,7 @@ More importantly (probably) is EDN."
            [s (bit-array->string binary)]
            (trace "Received:\n" s)
            (if (and (.hasReceiveMore socket)
-                    (= s (-> const :flag :edn)))
+                    (= s (-> K/const :flag :edn)))
              (do
                (trace "Should be more pieces on the way")
                (let [actual-binary (raw-recv socket :dont-wait)
@@ -316,7 +250,7 @@ A: Absolutely. May want to block or not."
             result))))
   ([#^ZMQ$Socket socket]
      ;; FIXME: Is this actually the flag I want?
-     (recv-all socket (const :send-more))))
+     (recv-all socket :send-more)))
 
 ;; I strongly suspect these next few methods are the original
 ;; that I've re-written above.
