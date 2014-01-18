@@ -20,42 +20,53 @@
   (:require [byte-transforms :as bt]
             [cljeromq.constants :as K]
             [clojure.edn :as edn]
-            [taoensso.timbre :as timbre
-             :refer (trace debug info warn error fatal spy with-log-level)]
             [zeromq.zmq :as mq])
-  (:import [org.zeromq ZMQ ZMQ$Context ZMQ$Socket ZMQ$Poller ZMQQueue])
-  (:import (java.util Random)
+  (:import [org.zeromq ZMQ ZMQ$Context ZMQ$Socket ZMQ$Poller ZMQQueue]
+           (java.util Random)
            (java.nio ByteBuffer)))
 
 ;; Really intended as a higher-level wrapper layer over
-;; cljzmq.
+;; cljzmq. Or maybe an experimental playground to try out alternative ideas/approaches.
 
-;; FIXME: Debug only!
-;; Q: Set up real logging options?
-;; A: Really should let whatever uses this library configure that.
-(comment (timbre/set-level! :trace))
+(defn context
+  "Create a messaging contexts.
+threads is the number of threads to use. Should never be larger than (dec cpu-count).
+Contexts are designed to be thread safe.
 
-(defn context [threads]
+There are very few instances where it makes sense to
+do anything more complicated than creating the context when your app starts and then calling
+terminate! on it just before it exits."
+  [threads]
   (ZMQ/context threads))
 
-(defn terminate! [#^ZMQ$Context ctx]
+(defn terminate!
+  "Stop a messaging context.
+Note that this can have strange effects if there are unclosed sockets."
+  [^ZMQ$Context ctx]
   (.term ctx))
 
 (defmacro with-context
+  "Convenience macro for situations where you can create, use, and kill the context in one place."
   [[id threads] & body]
   `(let [~id (context ~threads)]
      (try ~@body
           (finally (terminate! ~id)))))
 
 (defn socket
-  [#^ZMQ$Context context type]
+  "Create a new socket."
+  [^ZMQ$Context context type]
   (let [real-type (K/sock->const type)]
     (.socket context real-type)))
 
-(defn close! [#^ZMQ$Socket s]
+(defn close!
+  "You're done with a socket.
+TODO: Manipulate the socket's linger value appropriately."
+  [^ZMQ$Socket s]
   (.close s))
 
-(defmacro with-socket [[name context type] & body]
+(defmacro with-socket
+  "Convenience macro for handling the start/use/close pattern"
+  [[name context type] & body]
   `(let [~name (socket ~context ~type)]
      (try ~@body
           (finally (close! ~name)))))
@@ -65,58 +76,93 @@
 cljzmq doesn't seem to have an equivalent.
 It almost definitely needs one.
 FIXME: Fork that repo, add this, send a Pull Request."
-  [#^ZMQ$Context context #^ZMQ$Socket frontend #^ZMQ$Socket backend]
+  [^ZMQ$Context context ^ZMQ$Socket frontend ^ZMQ$Socket backend]
   (ZMQQueue. context frontend backend)))
 
-(defn bind
-  [#^ZMQ$Socket socket url]
+(defn bind!
+  "Associate this socket with a stable network interface/port.
+Any given machine can only have one socket bound to one endpoint at any given time.
+
+It might be helpful (though ultimately misleading) to think of this call as setting
+up the server side of an interaction."
+  [^ZMQ$Socket socket url]
   (.bind socket url))
+
+(defn bind-random-port!
+  "Binds to the first free port. Endpoint should be of the form
+\"<transport>://address\". (It automatically adds the port).
+Returns the port!"
+  ([^ZMQ$Socket socket endpoint]
+     (bind-random-port! socket endpoint 0 65535))
+  ([^ZMQ$Socket socket endpoint min]
+     (bind-random-port! socket endpoint min 65535))
+  ([^ZMQ$Socket socket endpoint min max]
+     (.bindToRandomPort socket endpoint min max)))
+
+(defn unbind!
+  [socket url]
+  (.unbind socket url))
 
 (defmacro with-bound-socket
   [[name ctx type url] & body]
   (let [name# name]
-    `(with-socket [name# ~ctx ~type]
-       (bind name# ~url)
-       ~@body)))
+    `(with-socket [~name# ~ctx ~type]
+       (bind! ~name# ~url)
+       (try
+         ~@body
+         (finally
+           ;; This is probably redundant, since the socket will be
+           ;; going away pretty much immediately.
+           (unbind! ~name# ~url))))))
+
+(defmacro with-randomly-bound-socket
+  [[name port-name ctx type url] & body]
+  (let [name# name
+        port-name# port-name
+        url# url]
+    `(with-socket [~name# ~ctx ~type]
+       (let [~port-name# (bind-random-port! ~name# ~url#)]
+         (~@body)))))
 
 (defn bound-socket
   "Return a new socket bound to the specified address"
   [ctx type url]
   (let [s (socket ctx type)]
-    (bind s url)
+    (bind! s url)
     s))
 
-(defn connect
+(defn connect!
   [#^ZMQ$Socket socket url]
   (.connect socket url))
 
 (defmacro with-connected-socket
   [[name ctx type url] & body]
   (let [name# name]
-    `(with-socket [name# ~ctx ~type]
-       (connect name# ~url)
+    `(with-socket [~name# ~ctx ~type]
+       (connect! ~name# ~url)
        ~@body)))
 
 (defn connected-socket
   "Returns a new socket connected to the specified URL"
   [ctx type url]
   (let [s (socket ctx type)]
-    (connect s url)
+    (connect! s url)
     s))
 
-(defn subscribe
+(defn subscribe!
   ([#^ZMQ$Socket socket #^String topic]
      (doto socket
        (.subscribe (.getBytes topic))))
   ([#^ZMQ$Socket socket]
-     (subscribe socket "")))
+     (subscribe! socket "")))
 
-(defn unsubscribe
+(defn unsubscribe!
   ([#^ZMQ$Socket socket #^String topic]
      (doto socket
        (.unsubscribe (.getBytes topic))))
   ([#^ZMQ$Socket socket]
-     (unsubscribe socket "")))
+     ;; Q: This unsubscribes from everything, doesn't it?
+     (unsubscribe! socket "")))
 
 ;;; Send
 
@@ -131,7 +177,8 @@ FIXME: Fork that repo, add this, send a Pull Request."
 
 (defmethod send String
   ([#^ZMQ$Socket socket #^String message flags]
-     (trace "Sending string:\n" message)
+     ;; FIXME: Debug only
+     (println "Sending string:\n" message)
      (.send #^ZMQ$Socket socket #^bytes (.getBytes message) (K/flags->const flags)))
   ([#^ZMQ$Socket socket #^String message]
      (send socket message :dont-wait)))
@@ -149,7 +196,7 @@ a lot of annoyingly duplicate boilerplate involved in these."
 
 (defmethod send :default
   ([#^ZMQ$Socket socket message flags]
-     (trace "Trying to transmit:\n" message "\n(a"
+     (println "Trying to transmit:\n" message "\n(a"
               (class message) ")")
      ;; For now, assume that we'll only be transmitting something
      ;; that can be printed out in a form that can be read back in
@@ -187,12 +234,12 @@ It totally falls apart when I'm just trying to send a string."
 
 (defn raw-recv
   ([#^ZMQ$Socket socket flags]
-     (trace "Top of raw-recv")
+     (println "Top of raw-recv")
      (let [flags (K/flags->const flags)]
-       (trace "Receiving from socket (flags:" flags ")")
+       (println "Receiving from socket (flags:" flags ")")
        (.recv socket flags)))
   ([#^ZMQ$Socket socket]
-     (trace "Parameterless raw-recv")
+     (println "Parameterless raw-recv")
      (raw-recv socket :wait)))
 
 (defn bit-array->string [bs]
@@ -207,22 +254,22 @@ More importantly (probably) is EDN."
   ([#^ZMQ$Socket socket flags]
      ;; I am getting here.
      ;; Well...once upon a time I was.
-     (trace "\tListening. Flags: " flags)
+     (println "\tListening. Flags: " flags)
      ;; And then apparently hanging here.
      ;; Well, except that I've successfully set this up to be non-blocking.
      ;; which means I'm getting a nil.
      (let [binary (raw-recv socket flags)]
-       (trace "\tRaw:\n" binary)
+       (println "\tRaw:\n" binary)
        (let
            [s (bit-array->string binary)]
-           (trace "Received:\n" s)
+           (println "Received:\n" s)
            (if (and (.hasReceiveMore socket)
                     (= s (-> K/const :flag :edn)))
              (do
-               (trace "Should be more pieces on the way")
+               (println "Should be more pieces on the way")
                (let [actual-binary (raw-recv socket :dont-wait)
                      actual-content (bit-array->string actual-binary)]
-                 (trace "Actual message:\n" actual-content)
+                 (println "Actual message:\n" actual-content)
                  ;; FIXME: Really should loop and build up a sequence.
                  ;; Absolutely nothing says this will be transmitted one
                  ;; sequence at a time.

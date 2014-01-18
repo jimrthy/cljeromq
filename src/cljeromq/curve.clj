@@ -1,7 +1,7 @@
 (ns cljeromq.curve
   (:require [net.n01se.clojure-jna :as jna]
             [cljeromq.constants :as K])
-  (:import [com.sun.jna Pointer]
+  (:import [com.sun.jna Pointer Native]
            [java.nio ByteBuffer])
   (:gen-class))
 
@@ -47,22 +47,13 @@ the public key."
   "Adjust socket options to make it suitable for connecting as
 a client to a server identified by server-key"
   [sock client-key-pair server-public-key]
-  (jna/invoke Integer zmq/zmq_setsockopt sock
-              (K/option->const :curve-server)
-              0
-              (Native/getNativeSize Integer))
-  (jna/invoke Integer zmq/zmq_setsockopt sock
-              (K/option->const :curve-server-key)
-              server-public-key
-              40)
-  (jna/invoke Integer zmq/zmq_setsockopt sock
-              (K/option->const :curve-public-key)
-              (:public client-key-pair)
-              40)
-  (jna/invoke Integer zmq/zmq_setsockopt sock
-              (K/option->const :curve-secret-key)
-              (:private client-key-pair)
-              40))
+  ;; sock is an instance of ZMQ$Socket. Can't pass that as
+  ;; a Pointer.
+  (doto sock
+    (.setLongSockopt (K/option->const :curve-server) 0)
+    (.setBytesSockopt (K/option->const :curve-server-key) server-public-key)
+    (.setBytesSockopt (K/option->const :curve-public-key) (:public client-key-pair))
+    (.setBytesSockopt (K/option->const :curve-secret-key) (:private client-key-pair))))
 
 (defn server-socket
   "Create a new socket suitable for use as a CURVE server.
@@ -81,7 +72,7 @@ make-socket-a-server!"
   ;; A: czmq is a convenience layer atop libzmq.
   ;; Other language bindings are expected to provide
   ;; something along the same lines.
-  (throw RuntimeException. "What happened to zauth_new?"))
+  (throw (RuntimeException. "What happened to zauth_new?")))
 
 ;; TODO:
 ;; Need to pull certs from a ZPL-format file
