@@ -10,10 +10,10 @@
                  ;; Switching to jeromq for now, at least until
                  ;; zeromq 4 is released.
                  ;; FIXME: That's out now. Use it!!
-                 ;;[org.zeromq/jzmq "2.2.0"]
+                 ;; Problem: It doesn't cope with Curve encryption.
+                 ;; TODO: Fix that.
                  [org.jeromq/jeromq "0.3.0-SNAPSHOT"]
-                 [org.zeromq/cljzmq "0.1.1" :exclusions [org.zeromq/jzmq]]
-                 [spyscope "0.1.3"]]
+                 [org.zeromq/cljzmq "0.1.1" :exclusions [org.zeromq/jzmq]]]
   :plugins [[lein-midje "3.0.0"]]
   :profiles {:dev {:dependencies [[midje "1.6.0"]
                                   [org.clojure/tools.namespace "0.2.4"]

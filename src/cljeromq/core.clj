@@ -93,7 +93,9 @@ up the server side of an interaction."
 \"<transport>://address\". (It automatically adds the port).
 Returns the port!"
   ([^ZMQ$Socket socket endpoint]
-     (bind-random-port! socket endpoint 0 65535))
+     (let [port (bind-random-port! socket endpoint 49152 65535)]
+       (println "Managed to bind to port " port)
+       port))
   ([^ZMQ$Socket socket endpoint min]
      (bind-random-port! socket endpoint min 65535))
   ([^ZMQ$Socket socket endpoint min max]
@@ -102,6 +104,13 @@ Returns the port!"
 (defn unbind!
   [socket url]
   (.unbind socket url))
+
+(defn bound-socket
+  "Return a new socket bound to the specified address"
+  [ctx type url]
+  (let [s (socket ctx type)]
+    (bind! s url)
+    s))
 
 (defmacro with-bound-socket
   [[name ctx type url] & body]
@@ -122,14 +131,8 @@ Returns the port!"
         url# url]
     `(with-socket [~name# ~ctx ~type]
        (let [~port-name# (bind-random-port! ~name# ~url#)]
+         (println "DEBUG only: randomly bound port # " ~port-name#)
          (~@body)))))
-
-(defn bound-socket
-  "Return a new socket bound to the specified address"
-  [ctx type url]
-  (let [s (socket ctx type)]
-    (bind! s url)
-    s))
 
 (defn connect!
   [#^ZMQ$Socket socket url]
