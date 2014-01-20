@@ -94,7 +94,7 @@ up the server side of an interaction."
 Returns the port!"
   ([^ZMQ$Socket socket endpoint]
      (let [port (bind-random-port! socket endpoint 49152 65535)]
-       (println "Managed to bind to port " port)
+       (println (str "Managed to bind to port '" port "'"))
        port))
   ([^ZMQ$Socket socket endpoint min]
      (bind-random-port! socket endpoint min 65535))
@@ -199,7 +199,7 @@ a lot of annoyingly duplicate boilerplate involved in these."
 
 (defmethod send :default
   ([#^ZMQ$Socket socket message flags]
-     (println "Trying to transmit:\n" message "\n(a"
+     (println "Default Send trying to transmit:\n" message "\n(a"
               (class message) ")")
      ;; For now, assume that we'll only be transmitting something
      ;; that can be printed out in a form that can be read back in
