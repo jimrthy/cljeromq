@@ -7,7 +7,7 @@
                  [com.taoensso/timbre "2.6.2"]
                  [net.n01se/clojure-jna "1.0.0"]
                  [org.clojure/clojure "1.5.1"]
-                 [org.zeromq/cljzmq "0.1.1"]]
+                 [org.zeromq/jzmq4 "4.0.0-SNAPSHOT"]]
   :plugins [[lein-midje "3.0.0"]]
   :profiles {:dev {:dependencies [[midje "1.6.0"]
                                   [org.clojure/tools.namespace "0.2.4"]
