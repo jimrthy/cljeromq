@@ -102,7 +102,7 @@ Returns the port!"
      (.bindToRandomPort socket endpoint min max)))
 
 (defn unbind!
-  [socket url]
+  [^ZMQ$Socket socket url]
   (.unbind socket url))
 
 (defn bound-socket
@@ -138,12 +138,20 @@ Returns the port!"
   [#^ZMQ$Socket socket url]
   (.connect socket url))
 
+(defn disconnect!
+  [#^ZMQ$Socket socket url]
+  (.disconnect socket url))
+
 (defmacro with-connected-socket
   [[name ctx type url] & body]
-  (let [name# name]
+  (let [name# name
+        url# url]
     `(with-socket [~name# ~ctx ~type]
-       (connect! ~name# ~url)
-       ~@body)))
+       (connect! ~name# ~url#)
+       (try
+         ~@body
+         (finally
+           (.disconnect ~name# ~url#))))))
 
 (defn connected-socket
   "Returns a new socket connected to the specified URL"

@@ -7,13 +7,7 @@
                  [com.taoensso/timbre "2.6.2"]
                  [net.n01se/clojure-jna "1.0.0"]
                  [org.clojure/clojure "1.5.1"]
-                 ;; Switching to jeromq for now, at least until
-                 ;; zeromq 4 is released.
-                 ;; FIXME: That's out now. Use it!!
-                 ;; Problem: It doesn't cope with Curve encryption.
-                 ;; TODO: Fix that.
-                 [org.jeromq/jeromq "0.3.0-SNAPSHOT"]
-                 [org.zeromq/cljzmq "0.1.1" :exclusions [org.zeromq/jzmq]]]
+                 [org.zeromq/cljzmq "0.1.1"]]
   :plugins [[lein-midje "3.0.0"]]
   :profiles {:dev {:dependencies [[midje "1.6.0"]
                                   [org.clojure/tools.namespace "0.2.4"]

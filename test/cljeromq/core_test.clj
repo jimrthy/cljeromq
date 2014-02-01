@@ -11,8 +11,8 @@
                  sender (core/socket ctx :req)
                  receiver (core/socket ctx :rep)]
              (try
-               (core/bind receiver url)
-               (core/connect sender url)
+               (core/bind! receiver url)
+               (core/connect! sender url)
 
                (info "Starting tests")
                ;; TODO: Really should split these up.
@@ -67,7 +67,9 @@
                (comment (future-fact "Transmit multiple sequences"
                                      ;; Q: What could this look like?
                                      ))
-               (finally (core/close! receiver)
+               (finally (core/unbind! receiver url)
+                        (core/close! receiver)
+                        (core/disconnect! sender url)
                         (core/close! sender))))
            (finally (core/terminate! ctx)))))
 
@@ -103,3 +105,12 @@
                        (core/send receiver msg)
                        (let [result (core/recv sender)]
                          msg => result))))))))
+
+
+(facts "Check unbinding"
+       (core/with-context [ctx 1]
+         (core/with-socket [nothing ctx :rep]
+           (let [addr "tcp://*:5678"]
+             (core/bind! nothing addr)
+             (trace "Have a socket bound")
+             (core/unbind! nothing addr)))))

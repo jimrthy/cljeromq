@@ -91,3 +91,11 @@ socket options."
   "Convert a keyword naming a socket option to a ZMQ constant"
   [key]
   (-> :socket-options const key))
+
+(defn version
+  "Return the 0mq version number as a vector"
+  []
+  (let [major (ZMQ/getMajorVersion)
+        minor (ZMQ/getMinorVersion)
+        patch (ZMQ/getPatchVersion)]
+    [major minor patch]))

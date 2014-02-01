@@ -5,7 +5,9 @@
             [clojure.repl :refer :all]
             [clojure.test :as test]
             [clojure.tools.namespace.repl :refer (refresh refresh-all)]
-            [cljeromq.core :as core]))
+            [cljeromq.core :as core]
+            [cljeromq.constants :as k])
+  (:import [org.zeromq ZMQ]))
 
 (def system nil)
 
