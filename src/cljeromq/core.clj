@@ -36,6 +36,9 @@ Contexts are designed to be thread safe.
 There are very few instances where it makes sense to
 do anything more complicated than creating the context when your app starts and then calling
 terminate! on it just before it exits."
+  []
+  (let [cpu-count (dec (.availableProcessors (Runtime/getRuntime)))]
+    (context cpu-count))
   [threads]
   (ZMQ/context threads))
 
@@ -238,6 +241,23 @@ It totally falls apart when I'm just trying to send a string."
   (doseq [m messages]
     (send-partial socket m))
   (send socket ""))
+
+(defn proxy 
+  "Reads from f-in as long as there are messages available,
+forwarding to f-out.
+f-out needs to be a function that accepts 1 parameter (whatever
+f-in returned).
+Really nothing more than a convenience function because I've
+found myself writing this pattern a lot, and the messaging functions
+don't seem to lend themselves well to the Seq abstraction...though
+that's really exactly what they're doing.
+Q: Why couldn't I handle these messages that way instead? i.e. with
+something like (dorun (map ...))"
+  [f-in f-out]
+  (loop [msg (f-in)]
+    (when msg
+      (f-out msg)
+      (recur (f-in)))))
 
 (defn identify
   [#^ZMQ$Socket socket #^String name]
