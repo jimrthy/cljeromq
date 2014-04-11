@@ -137,10 +137,14 @@ Returns the port!"
          (println "DEBUG only: randomly bound port # " ~port-name#)
          (~@body)))))
 
+;; TODO: I don't think this should actually be named w/ a !
+;; Then again, realistically, it *is* all about i/o. So
+;; maybe it should also be contained in an io! block.
 (defn connect!
   [#^ZMQ$Socket socket url]
   (.connect socket url))
 
+;; Ditto (re: naming convention)
 (defn disconnect!
   [#^ZMQ$Socket socket url]
   (.disconnect socket url))
