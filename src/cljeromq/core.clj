@@ -20,15 +20,17 @@
   (:require [byte-transforms :as bt]
             [cljeromq.constants :as K]
             [clojure.edn :as edn]
-            [zeromq.zmq :as mq])
-  (:import [org.zeromq ZMQ ZMQ$Context ZMQ$Socket ZMQ$Poller ZMQQueue]
-           (java.util Random)
+            [net.n01se.clojure-jna :as jna])
+  (:import  [com.sun.jna Pointer Native]
+            (java.util Random)
            (java.nio ByteBuffer)))
+
+(set! *warn-on-reflection* true)
 
 ;; Really intended as a higher-level wrapper layer over
 ;; cljzmq. Or maybe an experimental playground to try out alternative ideas/approaches.
 
-(defn context
+(defn context!
   "Create a messaging contexts.
 threads is the number of threads to use. Should never be larger than (dec cpu-count).
 Contexts are designed to be thread safe.
@@ -36,41 +38,50 @@ Contexts are designed to be thread safe.
 There are very few instances where it makes sense to
 do anything more complicated than creating the context when your app starts and then calling
 terminate! on it just before it exits."
-  []
-  (let [cpu-count (dec (.availableProcessors (Runtime/getRuntime)))]
-    (context cpu-count))
-  [threads]
-  (ZMQ/context threads))
+  (^Pointer []
+     (let [cpu-count (dec (.availableProcessors (Runtime/getRuntime)))]
+        (context! cpu-count)))
+  (^Pointer [^Integer threads]
+     (io!
+      ;; TODO: This is raw C. If this fails, really should handle the error gracefully
+      (let [ctx (jna/invoke Pointer zmq/zmq_ctx_new)
+            thread-count (-> K/const :conntext-option :io-threads)]
+        (let [threading-success (jna/invoke Integer zmq/zmq_ctx_set ctx thread-count threads)]
+          (if (= threading-success 0)
+            ctx
+            (throw (RuntimeException. "Context creation failed. Check errno"))))))))
 
 (defn terminate!
   "Stop a messaging context.
 Note that this can have strange effects if there are unclosed sockets."
-  [^ZMQ$Context ctx]
-  (.term ctx))
+  [^Pointer ctx]
+  # TODO: Error handling
+  (io! (jna/invoke Integer zmq/zmq_ctx_term ctx)))
 
-(defmacro with-context
+(defmacro with-context!
   "Convenience macro for situations where you can create, use, and kill the context in one place."
   [[id threads] & body]
-  `(let [~id (context ~threads)]
+  `(let [~id (context! ~threads)]
      (try ~@body
           (finally (terminate! ~id)))))
 
-(defn socket
+(defn socket!
   "Create a new socket."
-  [^ZMQ$Context context type]
+  ^Pointer [^Pointer context ^Integen type]
   (let [real-type (K/sock->const type)]
-    (.socket context real-type)))
+    (io! (jna/invoke Void zmq/zmq_socket context type))))
 
 (defn close!
   "You're done with a socket.
 TODO: Manipulate the socket's linger value appropriately."
-  [^ZMQ$Socket s]
-  (.close s))
+  [^Pointer s]
+  ;; TODO: Error handling
+  (io! (jna/invoke Integer zmq/zmq_close s)))
 
-(defmacro with-socket
+(defmacro with-socket!
   "Convenience macro for handling the start/use/close pattern"
   [[name context type] & body]
-  `(let [~name (socket ~context ~type)]
+  `(let [~name (socket! ~context ~type)]
      (try ~@body
           (finally (close! ~name)))))
 
@@ -88,37 +99,49 @@ Any given machine can only have one socket bound to one endpoint at any given ti
 
 It might be helpful (though ultimately misleading) to think of this call as setting
 up the server side of an interaction."
-  [^ZMQ$Socket socket url]
-  (.bind socket url))
+  [^Pointer socket ^String url]
+  (let [success (io! (jna/invoke Integer zmq/zmq_bind socket url))]
+    (when (not= success 0)
+      ;; TODO: Check errno on failure
+      (throw (RuntimeException. "Bind Failure")))))
 
-(defn bind-random-port!
-  "Binds to the first free port. Endpoint should be of the form
+;; This comes from the jzmq binding.
+;; There isn't anything fancy about it, but it isn't worth duplicating tonight.
+(comment (defn bind-random-port!
+           "Binds to the first free port. Endpoint should be of the form
 \"<transport>://address\". (It automatically adds the port).
 Returns the port!"
-  ([^ZMQ$Socket socket endpoint]
-     (let [port (bind-random-port! socket endpoint 49152 65535)]
-       (println (str "Managed to bind to port '" port "'"))
-       port))
-  ([^ZMQ$Socket socket endpoint min]
-     (bind-random-port! socket endpoint min 65535))
-  ([^ZMQ$Socket socket endpoint min max]
-     (.bindToRandomPort socket endpoint min max)))
+           ([^Pointer socket ^String endpoint]
+              (let [port (bind-random-port! socket endpoint 49152 65535)]
+                (println (str "Managed to bind to port '" port "'"))
+                port))
+           ([^Pointer socket ^String endpoint ^Integer min]
+              (bind-random-port! socket endpoint min 65535))
+           ([^Pointer socket ^String endpoint ^Integer min ^Integer max]
+              (.bindToRandomPort socket endpoint min max))))
 
 (defn unbind!
-  [^ZMQ$Socket socket url]
-  (.unbind socket url))
+  [^Pointer socket ^String url]
+  (let [success (io! (jna/invoke Integer zmq/zmq_unbind socket url))]
+    (when (not= success 0)
+      (throw (RuntimeException. "Handle unbind failure")))))
 
-(defn bound-socket
-  "Return a new socket bound to the specified address"
-  [ctx type url]
-  (let [s (socket ctx type)]
+(defn bound-socket!
+  "Return a new socket bound to the specified address
+Note that the type address should be OK as either the integer
+constant or the keyword that maps back to that constant, though
+this doesn't really seem practical"
+  ^Pointer [^Pointer ctx type ^String url]
+  (let [s (socket! ctx type)]
     (bind! s url)
     s))
 
-(defmacro with-bound-socket
-  [[name ctx type url] & body]
+(defmacro with-bound-socket!
+  [[name ^Pointer ctx type ^String url] & body]
   (let [name# name]
-    `(with-socket [~name# ~ctx ~type]
+    ;; This seems to be jumping through at least one
+    ;; extra hoop: why not just start from bound-socket!
+    `(with-socket! [~name# ~ctx ~type]
        (bind! ~name# ~url)
        (try
          ~@body
@@ -137,30 +160,31 @@ Returns the port!"
          (println "DEBUG only: randomly bound port # " ~port-name#)
          (~@body)))))
 
-;; TODO: I don't think this should actually be named w/ a !
-;; Then again, realistically, it *is* all about i/o. So
-;; maybe it should also be contained in an io! block.
 (defn connect!
-  [#^ZMQ$Socket socket url]
-  (.connect socket url))
+  [^Pointer socket ^String url]
+  (let [success (io! (jna/invoke Integer zmq/zmq_connect socket url))]
+    (when-not (= success 0)
+      (throw (RuntimeException. "Handle connection failure")))))
 
-;; Ditto (re: naming convention)
 (defn disconnect!
-  [#^ZMQ$Socket socket url]
-  (.disconnect socket url))
+  [^Pointer socket ^String url]
+  (let [success (jna/invoke Integer zmq/zmq_disconnect socket url)]
+    (when-not (= success 0)
+      (throw (RuntimeException. "Handle disconnection failure")))))
 
-(defmacro with-connected-socket
+(defmacro with-connected-socket!
+  "This will most likely fail horribly"
   [[name ctx type url] & body]
   (let [name# name
         url# url]
-    `(with-socket [~name# ~ctx ~type]
+    `(with-socket! [~name# ~ctx ~type]
        (connect! ~name# ~url#)
        (try
          ~@body
          (finally
-           (.disconnect ~name# ~url#))))))
+           (disconnect! ~name# ~url#))))))
 
-(defn connected-socket
+(defn connected-socket!
   "Returns a new socket connected to the specified URL"
   [ctx type url]
   (let [s (socket ctx type)]
@@ -168,7 +192,10 @@ Returns the port!"
     s))
 
 (defn subscribe!
-  ([#^ZMQ$Socket socket #^String topic]
+  ([^Pointer socket ^String topic]
+     ;; This really gets into the C-level API of setting
+     ;; socket options.
+     (throw RuntimeException. "This gets interesting")
      (doto socket
        (.subscribe (.getBytes topic))))
   ([#^ZMQ$Socket socket]
@@ -456,6 +483,16 @@ Then again, it's fairly lispy...callers can always rediret STDOUT."
       (identify socket (str (.nextLong rdn) "-" (.nextLong rdn) n))))
   ([#^ZMQ$Socket socket]
      (set-id socket 0)))
+
+(defn version
+  "Return the 0mq version number as a vector
+This doesn't seem to actually belong in here"
+  []
+  (throw (RuntimeException. "Translate this"))
+  (let [major (ZMQ/getMajorVersion)
+        minor (ZMQ/getMinorVersion)
+        patch (ZMQ/getPatchVersion)]
+    [major minor patch]))
 
 (defn -main [ & args]
   "This is a library for you to use...if you can figure out how to install it."
