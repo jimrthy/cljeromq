@@ -8,6 +8,12 @@
 ;;; (IMO) to cope with
 
 (def const {
+            ;;; Error codes
+            ;;; TODO: There aren't really that many of these. Might as well copy/paste them too
+
+            ;;; Context Options
+            :context-option {:io-threads 1
+                             :max-sockets 2}
             ;;; Socket types
             :socket-type {
                           ;; Internal 1:1
@@ -173,12 +179,3 @@ socket options."
   "Convert a keyword naming a socket option to a ZMQ constant"
   [key]
   (-> :socket-options const key))
-
-(defn version
-  "Return the 0mq version number as a vector
-This doesn't seem to actually belong in here"
-  []
-  (let [major (ZMQ/getMajorVersion)
-        minor (ZMQ/getMinorVersion)
-        patch (ZMQ/getPatchVersion)]
-    [major minor patch]))
