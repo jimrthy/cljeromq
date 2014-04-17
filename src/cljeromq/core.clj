@@ -45,7 +45,8 @@ terminate! on it just before it exits."
 
 (defn terminate!
   "Stop a messaging context.
-Note that this can have strange effects if there are unclosed sockets."
+If you have outgoing sockets with a linger value (which is the default), this will block until
+those messages are received."
   [^ZMQ$Context ctx]
   (io! (.term ctx)))
 
