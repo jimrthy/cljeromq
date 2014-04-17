@@ -56,7 +56,7 @@ terminate! on it just before it exits."
 If you have outgoing sockets with a linger value (which is the default), this will block until
 those messages are received."
   [^Pointer ctx]
-  # TODO: Error handling
+  ;; TODO: Error handling
   (io! (jna/invoke Integer zmq/zmq_ctx_term ctx)))
 
 (defmacro with-context
@@ -69,7 +69,7 @@ Seems like a great idea in theory, but doesn't seem all that useful in practice"
 
 (defn socket!
   "Create a new socket."
-  ^Pointer [^Pointer context ^Integen type]
+  ^Pointer [^Pointer context ^Integer type]
   (let [real-type (K/sock->const type)]
     (io! (jna/invoke Void zmq/zmq_socket context type))))
 
@@ -168,6 +168,13 @@ Returns the port!"
     (when-not (= success 0)
       (throw (RuntimeException. "Handle connection failure")))))
 
+(defn connected-socket!
+  "Returns a new socket connected to the specified URL"
+  [ctx type url]
+  (let [socket (socket! ctx type)]
+    (connect! socket url)
+    socket))
+
 (defn disconnect!
   [^Pointer socket ^String url]
   (let [success (jna/invoke Integer zmq/zmq_disconnect socket url)]
@@ -186,21 +193,36 @@ Returns the port!"
          (finally
            (disconnect! ~name# ~url#))))))
 
-(defn connected-socket!
-  "Returns a new socket connected to the specified URL"
-  [ctx type url]
-  (let [s (socket ctx type)]
-    (connect! s url)
-    s))
+(defn set-sock-opt!
+  "This is probably the biggest reason to use the official JNI bindings.
+And also the biggest reason not.
+Everything in life's a trade-off.
+This is all about low-level details like the length of the byte array that you're passing in
+to be coped with. Which probably means you can probably crash your entire network if you screw
+it up.
+TODO: Pass in the option as a ByteArray, so we can calculate its length here
+OTOH, if you need a socket option that isn't covered by the official language bindings...this
+beats the alternatives."
+  ([^Pointer socket ^Integer option-name ^Pointer option-value ^Integer option-length]
+     (let [success (io! (jna/invoke Integer zmq/zmq_setsockopt socket option-name option-value option-length))]
+       (when (not= success 0)
+         ;; TODO: Real error handling
+         (throw (RuntimeException. "Socket Subscription Failure")))))
+  ([^Pointer socket ^Integer option-name ^ByteArray option]
+     ;; Honestly, this is going to receive an option-name as a keyword, and the actual option as a string
+     (throw (RuntimeException. "Get this written"))
+     ))
 
 (defn subscribe!
   ([^Pointer socket ^String topic]
      ;; This really gets into the C-level API of setting
      ;; socket options.
-     (throw RuntimeException. "This gets interesting")
+     
+     (throw (RuntimeException. "This gets interesting"))
      (doto socket
        (io! (.subscribe (.getBytes topic)))))
-  ([#^ZMQ$Socket socket]
+  ([#^Pointer socket]
+     "This is really an unsubscribe"
      (subscribe! socket "")))
 
 (defn unsubscribe!
