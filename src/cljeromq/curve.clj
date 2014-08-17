@@ -65,7 +65,7 @@ Which seems like a truly horrid idea."
       (let [opt (K/option->const :curve-server-key)]
         (log/info "Trying to set server key: " server-key " (a " (class server-key)
                   " pulled from " server-public-key ", a " (class server-public-key) ")\naka\n"
-                  (String. server-key))
+                  (String. server-key) "\nThis is option # " opt)
         (.setBytesSockopt sock opt
                           server-key))
       (catch RuntimeException ex
