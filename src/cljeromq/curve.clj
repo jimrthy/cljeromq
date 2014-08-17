@@ -1,6 +1,8 @@
 (ns cljeromq.curve
-  (:require [net.n01se.clojure-jna :as jna]
-            [cljeromq.constants :as K])
+  (:require [byte-streams :as b-s]
+[net.n01se.clojure-jna :as jna]
+            [cljeromq.constants :as K]
+            [taoensso.timbre :as log])
   (:import [com.sun.jna Pointer Native]
            [java.nio ByteBuffer])
   (:gen-class))
@@ -45,15 +47,40 @@ the public key."
 
 (defn prepare-client-socket-for-server!
   "Adjust socket options to make it suitable for connecting as
-a client to a server identified by server-key"
-  [sock client-key-pair server-public-key]
-  ;; sock is an instance of ZMQ$Socket. Can't pass that as
-  ;; a Pointer.
-  (doto sock
-    (.setLongSockopt (K/option->const :curve-server) 0)
-    (.setBytesSockopt (K/option->const :curve-server-key) server-public-key)
-    (.setBytesSockopt (K/option->const :curve-public-key) (:public client-key-pair))
-    (.setBytesSockopt (K/option->const :curve-secret-key) (:private client-key-pair))))
+a client to a server identified by server-key
+TODO: I'm mixing/matching JNA and JNI.
+Which seems like a truly horrid idea."
+  [sock {:keys [public private :as client-key-pair]} server-public-key]
+  (let [server-key (b-s/to-byte-array server-public-key)
+        client-pubkey (b-s/to-byte-array public)
+        client-prvkey (b-s/to-byte-array private)]
+    ;; sock is an instance of ZMQ$Socket. Can't pass that as
+    ;; a Pointer.
+    (try
+      (.setLongSockopt sock (K/option->const :curve-server) 0)
+      (catch RuntimeException ex
+        (log/error ex "Failed to flag the socket as not-a-server")
+        (throw ex)))
+    (try
+      (let [opt (K/option->const :curve-server-key)]
+        (log/info "Trying to set server key: " server-key " (a " (class server-key)
+                  " pulled from " server-public-key ", a " (class server-public-key) ")\naka\n"
+                  (String. server-key))
+        (.setBytesSockopt sock opt
+                          server-key))
+      (catch RuntimeException ex
+        (log/error ex "Failed to assign the server's public key")
+        (throw ex)))
+    (try
+      (.setBytesSockopt sock (K/option->const :curve-public-key) client-pubkey)
+      (catch RuntimeException ex
+        (log/error ex "Failed to assign the client's public key")
+        (throw ex)))
+    (try
+      (.setBytesSockopt sock (K/option->const :curve-secret-key) client-prvkey)
+      (catch RuntimeException ex
+        (log/error ex "Failed to assign the client's private key")
+        (throw ex)))))
 
 (defn server-socket
   "Create a new socket suitable for use as a CURVE server.

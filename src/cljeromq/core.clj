@@ -16,15 +16,14 @@
 ;; ground. Then again, so does having this be LGPL.
 
 (ns cljeromq.core
-  (:refer-clojure :exclude [send])
-  (:require [byte-transforms :as bt]
-            [cljeromq.constants :as K]
+  (:refer-clojure :exclude [proxy send])
+  (:require [cljeromq.constants :as K]
             [clojure.edn :as edn]
-            [net.n01se.clojure-jna :as jna]
-            [zeromq.zmq :as mq])
+            [net.n01se.clojure-jna :as jna])
   (:import [com.sun.jna Pointer Native]
-           (java.util Random)
-           (java.nio ByteBuffer)))
+           [java.util Random]
+           [java.nio ByteBuffer]
+           [org.zeromq ZMQ ZMQ$Context ZMQ$Poller ZMQ$Socket]))
 
 ;; Really intended as a higher-level wrapper layer over
 ;; cljzmq. Or maybe an experimental playground to try out alternative ideas/approaches.
@@ -37,11 +36,11 @@ Contexts are designed to be thread safe.
 There are very few instances where it makes sense to
 do anything more complicated than creating the context when your app starts and then calling
 terminate! on it just before it exits."
-  []
+  ([]
   (let [cpu-count (dec (.availableProcessors (Runtime/getRuntime)))]
-    (context cpu-count))
-  [threads]
-  (ZMQ/context threads))
+    (context cpu-count)))
+  ([threads]
+     (ZMQ/context threads)))
 
 (defn terminate!
   "Stop a messaging context.
@@ -70,10 +69,10 @@ TODO: Manipulate the socket's linger value appropriately."
   [^ZMQ$Socket s]
   (io! (.close s)))
 
-(defmacro with-socket
+(defmacro with-socket!
   "Convenience macro for handling the start/use/close pattern"
   [[name context type] & body]
-  `(let [~name (socket ~context ~type)]
+  `(let [~name (socket! ~context ~type)]
      (try ~@body
           (finally (close! ~name)))))
 
@@ -114,14 +113,14 @@ Returns the port!"
 (defn bound-socket!
   "Return a new socket bound to the specified address"
   [ctx type url]
-  (let [s (socket ctx type)]
+  (let [s (socket! ctx type)]
     (bind! s url)
     s))
 
 (defmacro with-bound-socket!
   [[name ctx type url] & body]
   (let [name# name]
-    `(with-socket [~name# ~ctx ~type]
+    `(with-socket! [~name# ~ctx ~type]
        (bind! ~name# ~url)
        (try
          ~@body
@@ -135,7 +134,7 @@ Returns the port!"
   (let [name# name
         port-name# port-name
         url# url]
-    `(with-socket [~name# ~ctx ~type]
+    `(with-socket! [~name# ~ctx ~type]
        (let [~port-name# (bind-random-port! ~name# ~url#)]
          (println "DEBUG only: randomly bound port # " ~port-name#)
          (~@body)))))
@@ -152,7 +151,7 @@ Returns the port!"
   [[name ctx type url] & body]
   (let [name# name
         url# url]
-    `(with-socket [~name# ~ctx ~type]
+    `(with-socket! [~name# ~ctx ~type]
        (connect! ~name# ~url#)
        (try
          ~@body
@@ -162,7 +161,7 @@ Returns the port!"
 (defn connected-socket!
   "Returns a new socket connected to the specified URL"
   [ctx type url]
-  (let [s (socket ctx type)]
+  (let [s (socket! ctx type)]
     (connect! s url)
     s))
 
@@ -198,7 +197,7 @@ Returns the port!"
      (println "Sending string:\n" message)
      (io! (.send #^ZMQ$Socket socket #^bytes (.getBytes message) (K/flags->const flags))))
   ([#^ZMQ$Socket socket #^String message]
-     (io! (send socket message :dont-wait))))
+     (io! (send! socket message :dont-wait))))
 
 (defmethod send! Long
   ([#^ZMQ$Socket socket #^Long message flags]
@@ -344,11 +343,11 @@ A: Absolutely. May want to block or not."
 ;; FIXME: Verify that. See what (if anything) is worth saving.
 (defn recv-str!
   ([#^ZMQ$Socket socket]
-      (-> socket recv String. .trim))
+      (-> socket recv! String. .trim))
   ([#^ZMQ$Socket socket flags]
      ;; This approach risks NPE:
      ;;(-> socket (recv flags) String. .trim)
-     (when-let [s (recv socket flags)]
+     (when-let [s (recv! socket flags)]
        (-> s String. .trim))))
 
 (defn recv-all-str!
@@ -405,15 +404,20 @@ dealing with multiple sockets"
 
 (defn poll
   "Returns the number of sockets available in the poller
-FIXME: This is just a wrapper around the base handler.
+This is just a wrapper around the base handler.
 It feels dumb and more than a little pointless. Aside from the
-fact that I think it's wrong."
+fact that I think it's wrong.
+Q: Why do I have a problem with it?
+Aside from the fact that it seems like it'd be better to return a
+lazy seq of available sockets.
+For that matter, it seems like it would be better to just implement
+ISeq and return the next message as it becomes ready."
   ([poller]
-     (mq/poll poller))
+     (.poll poller))
   ([poller timeout]
-     (mq/poll poller timeout)))
+     (.poll poller timeout)))
 
-(defn check-poller 
+(comment (defn check-poller 
   "This sort of new-fangledness is why I started this library in the
 first place. I think it's missing the point more than a little if it's already
 in the default language binding.
@@ -421,7 +425,7 @@ in the default language binding.
 Not that this is actually doing *anything*
 different."
   [poller time-out & keys]
-  (mq/check-poller poller time-out keys))
+  (check-poller poller time-out keys)))
 
 (defn register-socket-in-poller!
   "Register a socket to poll on." 

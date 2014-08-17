@@ -1,8 +1,61 @@
 (ns cljeromq.core-test
   (:require [cljeromq.core :as core]
             [taoensso.timbre :as timbre
-             :refer (trace debug info warn error fatal spy with-log-level)])
-  (:use midje.sweet))
+             :refer (trace debug info warn error fatal spy with-log-level)]
+            [midje.sweet :refer :all]))
+
+(defn setup
+  [uri client-type server-type]
+    (let [ctx (ZMQ/context 1)]
+        (let [client (.socket ctx client-type)]
+            (.connect req uri)
+            (let [server (.socket ctx server-type)]
+              (.bind server uri)))))
+
+(defn teardown
+  ([ctx client server uri {:keys [unbind-server?]}]
+     (when unbind-server?
+       (.unbind server uri))
+     (.close server)
+     (.disconnect client uri)
+     (.close client)
+     (.term ctx))
+  ([ctx client server uri]
+     (teardown ctx client server uri {:unbind-server? true})))
+
+;; Even though I'm not using JNI at all any more.
+;; At least, I think it's gone.
+(facts "JNI"
+  (fact "Basic req/rep inproc handshake test"
+        (let [uri "inproc://a-test-1"
+              [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
+          (try
+            (let [client (future (.send req "HELO")
+                                 (String. (.recv req)))]
+              (let [greet (.recv rep)]
+                (is ("HELO" => (String. greet))))
+              (.send rep "kthxbye")
+              @client => "kthxbye")
+            (finally
+              ;; Can't unbind inproc socket
+              ;; This is actually Bug #949 in libzmq.
+              ;; It should be fixed in 4.1.0, but backporting to 4.0.x
+              ;; has been deemed not worth the effort
+              (is (thrown-with-msg? ZMQException #"No such file or directory"
+                                    (.unbind rep uri)))
+              (teardown ctx req rep uri {:unbind-server? false})))))
+  (fact "Basic req/rep TCP handshake test"
+        (let [uri "tcp://127.0.0.1:8709"
+              [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
+          (try
+            (let [client (future (.send req "HELO")
+                                 (String. (.recv req)))]
+              (let [greet (.recv rep)]
+                (is ("HELO" => (String. greet))))
+              (.send rep "kthxbye")
+              @client => "kthxbye")
+            (finally
+              (teardown ctx req rep uri))))))
 
 (facts "Basic functionality"
        (let [ctx (core/context 1)]
