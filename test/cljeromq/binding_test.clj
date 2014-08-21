@@ -106,7 +106,7 @@
             (finally (.close router))))
         (finally (.term ctx))))))
 
-(deftest test-encrypted-push
+(deftest test-encrypted-req-rep
   "Translated directly from my java unit test"
   (let [client-keys (ZCurveKeyPair/Factory)
         server-keys (ZCurveKeyPair/Factory)
@@ -137,6 +137,144 @@
           (let [response (.recv in 0)]
             (is (= (String. rep) (String. response))))))))
   (comment (println "Simple CURVE checked")))
+
+(deftest test-encrypted-push-pull
+  "Translated directly from my java unit test"
+  (let [client-keys (ZCurveKeyPair/Factory)
+        server-keys (ZCurveKeyPair/Factory)
+        ctx (ZMQ/context 1)
+        in (.socket ctx ZMQ/PUSH)]
+    (.makeIntoCurveClient in client-keys (.privateKey server-keys))
+    (.bind in "inproc://reqrep")
+
+    (let [out (.socket ctx ZMQ/PULL)]
+      (.makeIntoCurveServer out (.privateKey server-keys))
+      (.connect out "inproc://reqrep")
+
+      (doseq [n (range 10)]
+        (let [req (.getBytes (str "request" n))
+              rep (.getBytes (str "reply" n))]
+          (let [success (.send in req 0)]
+            (when-not success
+              (println "Sending request returned:" success)
+              (is false)))
+          (let [response (.recv out 0)]
+            (is (= (String. req) (String. response)))))))))
+
+(deftest test-encrypted-router-dealer
+  "Translated directly from my java unit test"
+  (let [client-keys (ZCurveKeyPair/Factory)
+        server-keys (ZCurveKeyPair/Factory)
+        ctx (ZMQ/context 1)
+        in (.socket ctx ZMQ/DEALER)]
+    (.makeIntoCurveClient in client-keys (.privateKey server-keys))
+    (.bind in "inproc://reqrep")
+
+    (let [out (.socket ctx ZMQ/ROUTER)]
+      (.makeIntoCurveServer out (.privateKey server-keys))
+      (.connect out "inproc://reqrep")
+
+      (doseq [n (range 10)]
+        (let [req (.getBytes (str "request" n))
+              rep (.getBytes (str "reply" n))]
+          (comment (println n))
+          (let [success (.send in req 0)]
+            (when-not success
+              (println "Sending request returned:" success)
+              (is false)))
+
+          (let [id (.recv out 0)
+                response (.recv out 0)
+                s-req (String. req)
+                s-rsp (String. response)]
+            (when-not (= s-req s-rsp)
+              (println "Sent '" s-req "' which is " (count req) " bytes long.\n"
+                       "Received '" s-rsp "' which is " (count response)
+                       " from " (String. id)))
+            (is (= s-req s-rsp))
+
+            (comment (.sendMore out (String. id))))
+          (let [success (.send out (String. rep))]
+            (when-not success
+              (println "Error sending Reply: " success)
+              (is false)))
+          (println "Inproc dealer waiting on encrypted response from router")
+          (let [response (.recv in 0)]
+            (is (= (String. rep) (String. response))))))))
+  (comment) (println "Dealer<->Router CURVE checked"))
+
+(deftest test-encrypted-router-dealer-over-tcp
+  (let [client-keys (ZCurveKeyPair/Factory)
+        server-keys (ZCurveKeyPair/Factory)
+        ctx (ZMQ/context 1)
+        in (.socket ctx ZMQ/DEALER)]
+    (.makeIntoCurveClient in client-keys (.privateKey server-keys))
+    (.bind in "tcp://*:54398")
+
+    (let [out (.socket ctx ZMQ/ROUTER)]
+      (.makeIntoCurveServer out (.privateKey server-keys))
+      (.connect out "tcp://127.0.0.1:54398")
+
+      (doseq [n (range 10)]
+        (let [req (.getBytes (str "request" n))
+              rep (.getBytes (str "reply" n))]
+          (comment) (println "Encrypted dealer/router over TCP" n)
+          (let [success (.send in req 0)]
+            (when-not success
+              (println "Sending request returned:" success)
+              (is false)))
+          (println "Waiting for encrypted message from dealer to arrive at router over TCP")
+          (let [response (.recv out 0)]
+            (println "Router received REQ")
+            (let [s-req (String. req)
+                  s-res (String. response)]
+              (when-not (= s-req s-res)
+                (println "Sent '" s-req "' which consists of " (count req) " bytes\n"
+                         "Received '" s-res "' which is " (count response) " bytes long")
+                (is (= s-req s-res)))))
+
+          (let [success (.send out (String. rep))]
+            (when-not success
+              (println "Error sending Reply: " success)
+              (is false)))
+          (println "Dealer waiting for encrypted ACK from Router over TCP")
+          (let [response (.recv in 0)]
+            (is (= (String. rep) (String. response))))
+          (println "Encrypted Dealer->Router over TCP complete"))))))
+
+(deftest test-unencrypted-router-dealer-over-tcp
+  "Translated directly from my java unit test"
+  (let [ctx (ZMQ/context 1)
+        in (.socket ctx ZMQ/DEALER)]
+    (.bind in "tcp://*:54398")
+
+    (let [out (.socket ctx ZMQ/ROUTER)]
+      (.connect out "tcp://127.0.0.1:54398")
+
+      (doseq [n (range 10)]
+        (let [req (.getBytes (str "request" n))
+              rep (.getBytes (str "reply" n))]
+          (comment (println n))
+          (let [success (.send in req 0)]
+            (when-not success
+              (println "Sending request returned:" success)
+              (is (or false true))))
+          (println "Waiting for message from dealer to arrive at router")
+          (let [response (.recv out 0)]
+            (println "Router received REQ")
+            (let [s-req (String. req)
+                  s-res (String. response)]
+              (when-not (= s-req s-res)
+                (println "Sent '" s-req "' which consists of " (count req) " bytes\n"
+                         "Received '" s-res "' which is " (count response) " bytes long")
+                (is (= s-req s-res)))))
+
+          (let [success (.send out (String. rep))]
+            (when-not success
+              (println "Error sending Reply: " success)
+              (is false)))
+          (let [response (.recv in 0)]
+            (is (= (String. rep) (String. response)))))))))
 
 (deftest minimal-curveless-communication-test
   (testing "Because communication is boring until the principals can swap messages"
@@ -177,109 +315,109 @@
             (finally (.close router))))
         (finally (.term ctx))))))
 
-(comment) 
-(deftest minimal-curve-communication-test
-  (testing "Because communication is boring until the principals can swap messages"
-    ;; Both threads block at receiving. Have verified that this definitely works in python
-    (let [server-keys (ZCurveKeyPair/Factory)
-          server-public (.publicKey server-keys)
-          server-secret (.privateKey server-keys)
-          client-keys (ZCurveKeyPair/Factory)
-          client-public (.publicKey client-keys)
-          client-secret (.privateKey client-keys)]
-      (println "Trying to connect from " (String. client-public) "/" (String. client-secret) "\n(that's "
-               (count client-public) " and " (count client-secret) " bytes) to\n"
-               (String. server-public) "/" (String. server-secret) "\nwith " (count server-public)
-               " and " (count server-secret) " bytes")
-      (let [ctx (ZMQ/context 1)]
-        (try
-          (let [zap-handler (.socket ctx ZMQ/REP)]
-            (try
-              ;; See if jzmq is using ZAuth behind my back in some sort of
-              ;; sneaky way.
-              ;; I honestly don't believe this is the case.
-              ;; And adding this doesn't seem to make any difference
-              (.bind zap-handler "inproc://zeromq.zap.01")
+(comment
+  (deftest minimal-curve-communication-test
+    (testing "Because communication is boring until the principals can swap messages"
+      ;; Both threads block at receiving. Have verified that this definitely works in python
+      (let [server-keys (ZCurveKeyPair/Factory)
+            server-public (.publicKey server-keys)
+            server-secret (.privateKey server-keys)
+            client-keys (ZCurveKeyPair/Factory)
+            client-public (.publicKey client-keys)
+            client-secret (.privateKey client-keys)]
+        (println "Trying to connect from " (String. client-public) "/" (String. client-secret) "\n(that's "
+                 (count client-public) " and " (count client-secret) " bytes) to\n"
+                 (String. server-public) "/" (String. server-secret) "\nwith " (count server-public)
+                 " and " (count server-secret) " bytes")
+        (let [ctx (ZMQ/context 1)]
+          (try
+            (let [zap-handler (.socket ctx ZMQ/REP)]
               (try
-                (let [zap-future (future
-                                   ;; TODO: Honestly, this should really be using something
-                                   ;; like ZAuth's ZAPRequest and ZAuthAgent inner classes.
-                                   ;; Assuming I need it at all.
-                                   ;; (Imperical evidence implies that I do. Docs imply
-                                   ;; that I shouldn't.
-                                   (loop [version (.recv zap-handler)]
-                                     (println "ZAP validation request received")
-                                     (throw (RuntimeException. "Got here"))
-                                     (let [sequence (.recv zap-handler)
-                                           domain (.recv zap-handler)
-                                           address (.recv zap-handler)
-                                           identity (.recv zap-handler)
-                                           mechanism (.recv zap-handler)]
-                                       (println "ZAP:\n" (String. version) "\n"
-                                                (String. sequence) "\n"
-                                                (String. domain) "\n"
-                                                (String. address) "\n"
-                                                (String. identity) "\n"
-                                                (String. mechanism "\n"))
-                                       ;; Need to respond with the sequence, b"200 and b"OK"
-                                       ;; (based on the python handler)
-                                       (.sendMore zap-handler "1.0")
-                                       (.sendMore zap-handler sequence)
-                                       (.sendMore zap-handler "200")
-                                       (.sendMore zap-handler "OK")
-                                       (.sendMore zap-handler "user id")
-                                       (.send zap-handler "metadata isn't used"))
-                                     (recur (.recv zap-handler))))]
-                  (let [server (.socket ctx ZMQ/REP)]
-                    (try
-                      (.makeIntoCurveServer server server-secret)
-                      ;; python unit tests treat this as read-only
+                ;; See if jzmq is using ZAuth behind my back in some sort of
+                ;; sneaky way.
+                ;; I honestly don't believe this is the case.
+                ;; And adding this doesn't seem to make any difference
+                (.bind zap-handler "inproc://zeromq.zap.01")
+                (try
+                  (let [zap-future (future
+                                     ;; TODO: Honestly, this should really be using something
+                                     ;; like ZAuth's ZAPRequest and ZAuthAgent inner classes.
+                                     ;; Assuming I need it at all.
+                                     ;; (Imperical evidence implies that I do. Docs imply
+                                     ;; that I shouldn't.
+                                     (loop [version (.recv zap-handler)]
+                                       (println "ZAP validation request received")
+                                       (throw (RuntimeException. "Got here"))
+                                       (let [sequence (.recv zap-handler)
+                                             domain (.recv zap-handler)
+                                             address (.recv zap-handler)
+                                             identity (.recv zap-handler)
+                                             mechanism (.recv zap-handler)]
+                                         (println "ZAP:\n" (String. version) "\n"
+                                                  (String. sequence) "\n"
+                                                  (String. domain) "\n"
+                                                  (String. address) "\n"
+                                                  (String. identity) "\n"
+                                                  (String. mechanism "\n"))
+                                         ;; Need to respond with the sequence, b"200 and b"OK"
+                                         ;; (based on the python handler)
+                                         (.sendMore zap-handler "1.0")
+                                         (.sendMore zap-handler sequence)
+                                         (.sendMore zap-handler "200")
+                                         (.sendMore zap-handler "OK")
+                                         (.sendMore zap-handler "user id")
+                                         (.send zap-handler "metadata isn't used"))
+                                       (recur (.recv zap-handler))))]
+                    (let [server (.socket ctx ZMQ/REP)]
+                      (try
+                        (.makeIntoCurveServer server server-secret)
+                        ;; python unit tests treat this as read-only
 
-                      (let [localhost "tcp://127.0.0.1"
-                            port (.bindToRandomPort server localhost)
-                            url (str localhost ":" port)]
-                        (try
-                          (println "Doing comms over '" url "'")
-                          (let [client (.socket ctx ZMQ/DEALER)]
-                            (try
-                              (.makeIntoCurveClient client client-keys server-public)
+                        (let [localhost "tcp://127.0.0.1"
+                              port (.bindToRandomPort server localhost)
+                              url (str localhost ":" port)]
+                          (try
+                            (println "Doing comms over '" url "'")
+                            (let [client (.socket ctx ZMQ/DEALER)]
                               (try
-                                (.connect client url)
+                                (.makeIntoCurveClient client client-keys server-public)
                                 (try
-                                  (let [server-thread 
-                                        (future 
-                                          (println "Server: Waiting on encrypted message from dealer")
-                                          (let [greet (.recv server)]  ;; TODO: Add a timeout so we don't block everything
-                                            (is (= "OLEH" (String. greet)))
-                                            (println "Server: Encrypted greeting decrypted")
-                                            (is (.send server "cool"))
-                                            (println "server: Response sent")))]
-                                    (try
+                                  (.connect client url)
+                                  (try
+                                    (let [server-thread 
+                                          (future 
+                                            (println "Server: Waiting on encrypted message from dealer")
+                                            (let [greet (.recv server)]  ;; TODO: Add a timeout so we don't block everything
+                                              (is (= "OLEH" (String. greet)))
+                                              (println "Server: Encrypted greeting decrypted")
+                                              (is (.send server "cool"))
+                                              (println "server: Response sent")))]
+                                      (try
 
-                                      (println "Client: sending greeting")
-                                      (is (.sendMore client ""))
-                                      (is (.send client "OLEH"))
-                                      (println "Client: greeting sent")
-                                      (let [identity (String. (.recv client))]
-                                        (is (.hasReceiveMore client))
-                                        (let [result (String. (.recv client))]
-                                          (println "Client: received " result
-                                                   " from " identity)
-                                          (is (= result "cool"))))
-                                      (finally
-                                        (when-not (realized? server-thread)
-                                          (future-cancel server-thread)))))
-                                  (finally (.disconnect client url)))
-                                (finally (.close client)))
-                              (finally (.unbind server url))))))
-                      (finally (.close server))))
-                  (when-not (realized? zap-future)
-                    (future-cancel zap-future)))
-                (finally
-                  ;; Don't try to unbind inproc sockets
-                  ))
-              (finally (.close zap-handler))))
-          (finally (.term ctx)))))))
+                                        (println "Client: sending greeting")
+                                        (is (.sendMore client ""))
+                                        (is (.send client "OLEH"))
+                                        (println "Client: greeting sent")
+                                        (let [identity (String. (.recv client))]
+                                          (is (.hasReceiveMore client))
+                                          (let [result (String. (.recv client))]
+                                            (println "Client: received " result
+                                                     " from " identity)
+                                            (is (= result "cool"))))
+                                        (finally
+                                          (when-not (realized? server-thread)
+                                            (future-cancel server-thread)))))
+                                    (finally (.disconnect client url)))
+                                  (finally (.close client)))
+                                (finally (.unbind server url))))))
+                        (finally (.close server))))
+                    (when-not (realized? zap-future)
+                      (future-cancel zap-future)))
+                  (finally
+                    ;; Don't try to unbind inproc sockets
+                    ))
+                (finally (.close zap-handler))))
+            (finally (.term ctx))))))))
 
 (comment (deftest hardcoded-curve-communication-test
            (testing "Try using keys that I just generated by hand from the python binding"
