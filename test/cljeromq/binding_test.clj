@@ -12,11 +12,11 @@
       (try
         (let [req (.socket ctx ZMQ/REQ)]
           (try
-            (.connect req uri)
+            (.bind req uri)
             (try
               (let [rep (.socket ctx ZMQ/REP)]
                 (try
-                  (.bind rep uri)
+                  (.connect rep uri)
                   (try
                     (let [client (future (.send req "HELO")
                                          (String. (.recv req)))]
@@ -25,16 +25,16 @@
                       (.send rep "kthxbye")
                       (is (= @client "kthxbye")))
                     (finally
-                      ;; Can't unbind inproc socket
-                      ;; This is actually Bug #949 in libzmq.
-                      ;; It should be fixed in 4.1.0, but backporting to 4.0.x
-                      ;; has been deemed not worth the effort
-                      (is (thrown-with-msg? ZMQException #"No such file or directory"
-                                            (.unbind rep uri)))))
+                      (.disconnect rep)))
                   (finally
                     (.close rep))))
               (finally
-                (.disconnect req uri)))
+                ;; Can't unbind inproc socket
+                ;; This is actually Bug #949 in libzmq.
+                ;; It should be fixed in 4.1.0, but backporting to 4.0.x
+                ;; has been deemed not worth the effort
+                (is (thrown-with-msg? ZMQException #"No such file or directory"
+                                      (.unbind req uri)))))
             (finally (.close req))))
         (finally
           (.term ctx))))))
@@ -80,6 +80,8 @@
           client-secret (.privateKey client-keys)
           ctx (ZMQ/context 1)]
       (try
+        ;; Dealer <-> Dealer is just evil.
+        (throw (RuntimeException. "Don't do this"))
         (let [router (.socket ctx ZMQ/DEALER)]
           (try
             ;; python unit tests treat this as read-only
@@ -119,7 +121,7 @@
       (.makeIntoCurveServer out (.privateKey server-keys))
       (.connect out "inproc://reqrep")
 
-      (doseq [n (range 10)]
+      (dotimes [n 10]
         (let [req (.getBytes (str "request" n))
               rep (.getBytes (str "reply" n))]
           (comment (println n))
@@ -151,7 +153,7 @@
       (.makeIntoCurveServer out (.privateKey server-keys))
       (.connect out "inproc://reqrep")
 
-      (doseq [n (range 10)]
+      (dotimes [n 10]
         (let [req (.getBytes (str "request" n))
               rep (.getBytes (str "reply" n))]
           (let [success (.send in req 0)]
@@ -174,7 +176,7 @@
       (.makeIntoCurveServer out (.privateKey server-keys))
       (.connect out "inproc://reqrep")
 
-      (doseq [n (range 10)]
+      (dotimes [n 10]
         (let [req (.getBytes (str "request" n))
               rep (.getBytes (str "reply" n))]
           (comment (println n))
@@ -215,7 +217,7 @@
       (.makeIntoCurveServer out (.privateKey server-keys))
       (.connect out "tcp://127.0.0.1:54398")
 
-      (doseq [n (range 10)]
+      (dotimes [n 10]
         (let [req (.getBytes (str "request" n))
               rep (.getBytes (str "reply" n))]
           (comment) (println "Encrypted dealer/router over TCP" n)
@@ -251,7 +253,7 @@
     (let [out (.socket ctx ZMQ/ROUTER)]
       (.connect out "tcp://127.0.0.1:54398")
 
-      (doseq [n (range 10)]
+      (dotimes [n 10]
         (let [req (.getBytes (str "request" n))
               rep (.getBytes (str "reply" n))]
           (comment (println n))

@@ -66,6 +66,7 @@ Which seems like a truly horrid idea."
         (log/info "Trying to set server key: " server-key " (a " (class server-key)
                   " pulled from " server-public-key ", a " (class server-public-key) ")\naka\n"
                   (String. server-key) "\nThis is option # " opt)
+        ;; After sleeping on it, I bet my problem is that sock isn't what JNI expects.
         (.setBytesSockopt sock opt
                           server-key))
       (catch RuntimeException ex
