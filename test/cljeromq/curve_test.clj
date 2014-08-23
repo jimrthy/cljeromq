@@ -19,11 +19,20 @@
            (mq/connect! puller "tcp://127.0.0.1:2101")
            
            (let [msg "Unencrypted push"
-                 push-thread (future (push-unencrypted ctx msg))]
-             (fact "pulls what was pushed"
-                   (dotimes [i 10]
-                     (println "Pulling # " (inc i))
-                     (mq/recv! puller) => (str msg i)))
+                 push-thread (comment (future (push-unencrypted ctx msg)))]
+             (mq/with-socket! [pusher ctx :push]
+               (mq/bind! pusher  "tcp://127.0.0.1:2101")
+               (fact "pulls what was pushed"
+                     (dotimes [i 10]
+                       (println "Pulling # " (inc i))
+                       ;; Even setting the pieces up like this still seems
+                       ;; to drop the message from the push socket and then
+                       ;; the puller blocks.
+                       ;; Q: What on earth makes sense here? Do I really need
+                       ;; to pull in something like core.async for this sort of
+                       ;; unit tests?!
+                       (mq/send! pusher (str msg i))
+                       (mq/recv! puller) => (str msg i))))
              (fact "What does msg/send return?"
                    @push-thread => nil)))))
 
