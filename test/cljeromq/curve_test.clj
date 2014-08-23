@@ -5,9 +5,8 @@
 
 (defn push-unencrypted [ctx msg]
   (println "Plain-text Push Server thread started")
-  (comment (Thread/sleep 500))   ; wait for client to connect (this is awful!)
   (mq/with-socket! [pusher ctx :push]
-    (mq/bind! pusher  "tcp://127.0.0.1:2101")
+    (mq/connect! pusher  "tcp://127.0.0.1:2101")
     (dotimes [i 10]
       (comment) (println "Push " (inc i))
       (mq/send! pusher (str msg i)))))
@@ -16,23 +15,13 @@
        (println "Checking plain-text push/pull interaction")
        (mq/with-context [ctx 2]
          (mq/with-socket! [puller ctx :pull]
-           (mq/connect! puller "tcp://127.0.0.1:2101")
+           (mq/bind! puller "tcp://127.0.0.1:2101")
            
            (let [msg "Unencrypted push"
-                 push-thread (comment (future (push-unencrypted ctx msg)))]
-             (mq/with-socket! [pusher ctx :push]
-               (mq/bind! pusher  "tcp://127.0.0.1:2101")
-               (fact "pulls what was pushed"
-                     (dotimes [i 10]
-                       (println "Pulling # " (inc i))
-                       ;; Even setting the pieces up like this still seems
-                       ;; to drop the message from the push socket and then
-                       ;; the puller blocks.
-                       ;; Q: What on earth makes sense here? Do I really need
-                       ;; to pull in something like core.async for this sort of
-                       ;; unit tests?!
-                       (mq/send! pusher (str msg i))
-                       (mq/recv! puller) => (str msg i))))
+                 push-thread (future (push-unencrypted ctx msg))]
+             (fact "pulls what was pushed"
+                   (dotimes [i 10]
+                     (mq/recv! puller) => (str msg i)))
              (fact "What does msg/send return?"
                    @push-thread => nil)))))
 
@@ -40,8 +29,7 @@
   (println "Encrypted Push-Server thread started")
   (mq/with-socket! [pusher ctx :push]
     (enc/make-socket-a-server! pusher (:private server-keys))
-    (mq/bind! pusher  "tcp://*:2101")
-    (Thread/sleep 500)
+    (mq/connect! pusher  "tcp://127.0.0.1:2101")
     (dotimes [i 10]
       (println "Push " (inc i))
       (mq/send! pusher (str msg i)))))
@@ -56,7 +44,7 @@
              (let [client-keys (enc/new-key-pair)]
                (enc/prepare-client-socket-for-server! 
                 puller client-keys (:public server-keys))
-               (mq/connect! puller "tcp://localhost:2101")
+               (mq/bind! puller "tcp://127.0.0.1:2101")
                
                (fact "pulls what was pushed"
                      (dotimes [i 10]
