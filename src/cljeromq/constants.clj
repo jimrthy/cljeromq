@@ -56,14 +56,19 @@
                           :xreq ZMQ/XREQ
                           :xrep ZMQ/XREP}
 
-            ;; TODO: Does the official cljmq language bindings have these
+            ;; Q: Does the official cljmq language bindings have these
             ;; defined yet?
-            :socket-options {:curve-server 47  ; 1 for yes, 0 for no
+            ;; A: Yes, it's caught up.
+            ;; But they're private.
+            ;; TODO: Access these via iroh?
+            :socket-options {:curve-server 47   ; ZMQ/CURVE_SERVER  ; 1 for yes, 0 for no
                              ;; the next two are for the client
-                             :curve-public-key 48
-                             :curve-secret-key 49
-                             ;; According to docs, server just needs private key
-                             :curve-server-key 50}
+                             :curve-public-key 48  ; ZMQ/CURVE_PUBLIC_KEY
+                             :curve-secret-key 49  ; ZMQ/CURVE_SECRET_KEY
+                             ;; The server just needs the private key
+                             ;; The client's what needs this.
+                             :curve-server-key 50  ; ZMQ/CURVE_SERVER_KEY
+                             }
             ;; Named magical numbers/strings
             :flag
             {:edn "clojure/edn"}})

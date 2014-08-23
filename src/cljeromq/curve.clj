@@ -1,6 +1,6 @@
 (ns cljeromq.curve
   (:require [byte-streams :as b-s]
-[net.n01se.clojure-jna :as jna]
+            [net.n01se.clojure-jna :as jna]
             [cljeromq.constants :as K]
             [taoensso.timbre :as log])
   (:import [com.sun.jna Pointer Native]
@@ -56,22 +56,11 @@ Which seems like a truly horrid idea."
         client-prvkey (b-s/to-byte-array private)]
     ;; sock is an instance of ZMQ$Socket. Can't pass that as
     ;; a Pointer.
-    (try
-      (.setLongSockopt sock (K/option->const :curve-server) 0)
-      (catch RuntimeException ex
-        (log/error ex "Failed to flag the socket as not-a-server")
-        (throw ex)))
-    (try
-      (let [opt (K/option->const :curve-server-key)]
-        (log/info "Trying to set server key: " server-key " (a " (class server-key)
-                  " pulled from " server-public-key ", a " (class server-public-key) ")\naka\n"
-                  (String. server-key) "\nThis is option # " opt)
-        ;; After sleeping on it, I bet my problem is that sock isn't what JNI expects.
-        (.setBytesSockopt sock opt
-                          server-key))
-      (catch RuntimeException ex
-        (log/error ex "Failed to assign the server's public key")
-        (throw ex)))
+    (comment (try
+               (.setLongSockopt sock (K/option->const :curve-server) 0)
+               (catch RuntimeException ex
+                 (log/error ex "Failed to flag the socket as not-a-server")
+                 (throw ex))))
     (try
       (.setBytesSockopt sock (K/option->const :curve-public-key) client-pubkey)
       (catch RuntimeException ex
@@ -81,6 +70,16 @@ Which seems like a truly horrid idea."
       (.setBytesSockopt sock (K/option->const :curve-secret-key) client-prvkey)
       (catch RuntimeException ex
         (log/error ex "Failed to assign the client's private key")
+        (throw ex)))
+    (try
+      (let [opt (K/option->const :curve-server-key)]
+        (comment (log/info "Trying to set server key: " server-key " (a " (class server-key)
+                           "\npulled from " server-public-key ", a " (class server-public-key) ")\naka\n"
+                           (String. server-key) " (which is " (count server-key) "bytes long.\nThis is option # " opt
+                           "\non " sock " -- a " (class sock)))
+        (.setBytesSockopt sock opt server-key))
+      (catch RuntimeException ex
+        (log/error ex "Failed to assign the server's public key")
         (throw ex)))))
 
 (defn server-socket

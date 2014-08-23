@@ -194,7 +194,7 @@ Returns the port!"
 (defmethod send! String
   ([#^ZMQ$Socket socket #^String message flags]
      ;; FIXME: Debug only
-     (println "Sending string:\n" message)
+     (comment (println "Sending string:\n" message))
      (io! (.send #^ZMQ$Socket socket #^bytes (.getBytes message) (K/flags->const flags))))
   ([#^ZMQ$Socket socket #^String message]
      (io! (send! socket message :dont-wait))))
