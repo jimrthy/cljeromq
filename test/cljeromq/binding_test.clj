@@ -5,7 +5,7 @@
   (:require [clojure.test :refer :all]
             [jzmq-check.core :refer :all]))
 
-(deftest a-test
+(deftest req-rep-inproc-unencrypted-handshake
   (testing "Basic inproc req/rep handshake test"
     (let [uri "inproc://a-test-1"
           ctx (ZMQ/context 1)]
@@ -39,7 +39,7 @@
         (finally
           (.term ctx))))))
 
-(deftest tcp-test
+(deftest simplest-tcp-test
   (testing "TCP REP/REQ handshake"
     (let [uri "tcp://127.0.0.1:8592"
           ctx (ZMQ/context 1)]
@@ -80,9 +80,7 @@
           client-secret (.privateKey client-keys)
           ctx (ZMQ/context 1)]
       (try
-        ;; Dealer <-> Dealer is just evil.
-        (throw (RuntimeException. "Don't do this"))
-        (let [router (.socket ctx ZMQ/DEALER)]
+        (let [router (.socket ctx ZMQ/ROUTER)]
           (try
             ;; python unit tests treat this as read-only
             (.setLongSockopt router 47 1)   ; server?
@@ -170,22 +168,25 @@
         ctx (ZMQ/context 1)
         in (.socket ctx ZMQ/DEALER)]
     (.makeIntoCurveClient in client-keys (.privateKey server-keys))
+    (.setIdentity in "basic router/dealer encryption check")
     (.bind in "inproc://reqrep")
 
     (let [out (.socket ctx ZMQ/ROUTER)]
       (.makeIntoCurveServer out (.privateKey server-keys))
-      (.connect out "inproc://reqrep")
+      (.connect out "inproc://reqrep")  ; Much more realistic for this to bind.
 
       (dotimes [n 10]
         (let [req (.getBytes (str "request" n))
               rep (.getBytes (str "reply" n))]
           (comment (println n))
-          (let [success (.send in req 0)]
+          (let [_ (.sendMore in "")
+                success (.send in req 0)]
             (when-not success
               (println "Sending request returned:" success)
               (is false)))
 
           (let [id (.recv out 0)
+                delimeter (.recv out 0)
                 response (.recv out 0)
                 s-req (String. req)
                 s-rsp (String. response)]
@@ -195,13 +196,15 @@
                        " from " (String. id)))
             (is (= s-req s-rsp))
 
-            (comment (.sendMore out (String. id))))
-          (let [success (.send out (String. rep))]
+            (comment) (.sendMore out (String. id)))
+          (let [_ (.send out "")
+                success (.send out (String. rep))]
             (when-not success
               (println "Error sending Reply: " success)
               (is false)))
           (println "Inproc dealer waiting on encrypted response from router")
-          (let [response (.recv in 0)]
+          (let [_ (.recv in 0)
+                response (.recv in 0)]
             (is (= (String. rep) (String. response))))))))
   (comment) (println "Dealer<->Router CURVE checked"))
 
