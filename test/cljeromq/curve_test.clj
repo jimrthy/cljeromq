@@ -36,7 +36,7 @@
 
 (facts basic-socket-encryption
        (println "Checking encrypted push/pull interaction")
-       (mq/with-context [ctx 2]
+       (mq/with-context [ctx 1]
          (let [server-keys (enc/new-key-pair)
                msg "Encrypted push"
                push-thread (future (push-encrypted ctx server-keys msg))]

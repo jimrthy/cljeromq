@@ -19,28 +19,43 @@
   (:refer-clojure :exclude [proxy send])
   (:require [cljeromq.constants :as K]
             [clojure.edn :as edn]
-            [net.n01se.clojure-jna :as jna])
-  (:import [com.sun.jna Pointer Native]
+            [net.n01se.clojure-jna :as jna]
+            [ribol.core :refer (raise)])
+  (:import [com.sun.jna Integer Native Pointer String]
            [java.util Random]
            [java.nio ByteBuffer]
-           [org.zeromq ZMQ ZMQ$Context ZMQ$Poller ZMQ$Socket]))
+           #_[org.zeromq ZMQ ZMQ$Context ZMQ$Poller ZMQ$Socket]))
 
-;; Really intended as a higher-level wrapper layer over
-;; cljzmq. Or maybe an experimental playground to try out alternative ideas/approaches.
+(defn errno
+  "What is the 0mq error state?
+The name is stolen from the C library I'm actually using."
+  []
+  (let [code (jna/invoke Integer zmq/zmq_errno)
+        message (jna/invoke String zmq/zmq_strerror code)]
+    {:code code
+     :message message}))
 
 (defn context
   "Create a messaging contexts.
 threads is the number of threads to use. Should never be larger than (dec cpu-count).
+
+Sources disagree about the optimal value here. Some recommend the max, others just 1.
+In practice, I've had issues with < 2, but those were my fault.
+
 Contexts are designed to be thread safe.
 
 There are very few instances where it makes sense to
 do anything more complicated than creating the context when your app starts and then calling
 terminate! on it just before it exits."
+  ([thread-count]
+     (let [ctx (jna/invoke Pointer zmq/zmq_ctx_new)
+           thread-count-success (jna/invoke Integer zmq/zmq_ctx_set ctx option thread-count)]
+       (when (< thread-count success 0)
+         (raise [:fail {:reason (errno)}]))))
   ([]
-  (let [cpu-count (dec (.availableProcessors (Runtime/getRuntime)))]
-    (context cpu-count)))
-  ([threads]
-     (ZMQ/context threads)))
+     (let [cpu-count (.availableProcessors (Runtime/getRuntime))]
+       ;; Go with maximum as default
+       (context (dec cpu-count)))))
 
 (defn terminate!
   "Stop a messaging context.

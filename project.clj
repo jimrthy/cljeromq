@@ -8,7 +8,8 @@
                  [com.taoensso/timbre "2.6.2"]
                  [net.n01se/clojure-jna "1.0.0"]
                  [org.clojure/clojure "1.6.0"]
-                 [org.zeromq/jzmq "3.1.1-SNAPSHOT"]]
+                 [org.zeromq/jzmq "3.1.1-SNAPSHOT"]
+                 [im.chit/ribol "0.4.0"]]  ; Because I need *something* to make C-style error handling palatable
   ;; Because java isn't bright enough to find this without help.
   :jvm-opts [~(str "-Djava.library.path=/usr/local/lib:" (System/getenv "LD_LIBRARY_PATH"))]
   :plugins [[lein-midje "3.0.0"]]

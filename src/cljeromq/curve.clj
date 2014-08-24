@@ -19,7 +19,7 @@ array if you need that.
 e.g.
 ;; (def s (String. (.array buffer)))"
   []
-  (let [private (ByteBuffer/allocate 41)
+  (let [private (ByteBuffer/allocate 41)  ; TODO: Use make-cbuf instead
         public (ByteBuffer/allocate 41)
         success (jna/invoke Integer zmq/zmq_curve_keypair
                             public private)]
@@ -40,9 +40,20 @@ the public key."
   (jna/invoke Integer zmq/zmq_setsockopt sock
               (K/option->const :curve-server-key)
               private-key
-              40)
+              41)
   ;; official tests also set the ZMQ_IDENTITY option.
   ;; Q: What does that actually do?
+  ;; A: It's really for clients that might drop
+  ;; connections. When they restore (esp. if the
+  ;; other side's a Router), they're likely to get
+  ;; a new session/identity.
+  ;; This lets a client specify its own.
+  ;; Which, arguably, is more important for servers.
+  ;; The downside to this is that it's really totally
+  ;; insecure and unprotected. The mailing lists
+  ;; are full of complaints about how this *should*
+  ;; work and confusion over how it actually does.
+  ;; So...probably a good idea to do, at least in theory.
   )
 
 (defn prepare-client-socket-for-server!
@@ -62,12 +73,18 @@ Which seems like a truly horrid idea."
                  (log/error ex "Failed to flag the socket as not-a-server")
                  (throw ex))))
     (try
-      (.setBytesSockopt sock (K/option->const :curve-public-key) client-pubkey)
+      (jna/invoke Integer zmq/zmq_setsockopt sock
+                  (K/option->const :curve-public-key)
+                  client-pubkey
+                  41)
       (catch RuntimeException ex
         (log/error ex "Failed to assign the client's public key")
         (throw ex)))
     (try
-      (.setBytesSockopt sock (K/option->const :curve-secret-key) client-prvkey)
+      (jna/invoke Integer zmq/zmq_setsockopt sock
+                  (K/option->const :curve-secret-key)
+                  client-prvkey
+                  41)
       (catch RuntimeException ex
         (log/error ex "Failed to assign the client's private key")
         (throw ex)))
@@ -77,7 +94,10 @@ Which seems like a truly horrid idea."
                            "\npulled from " server-public-key ", a " (class server-public-key) ")\naka\n"
                            (String. server-key) " (which is " (count server-key) "bytes long.\nThis is option # " opt
                            "\non " sock " -- a " (class sock)))
-        (.setBytesSockopt sock opt server-key))
+      (jna/invoke Integer zmq/zmq_setsockopt sock
+                  opt
+                  server-key
+                  41))
       (catch RuntimeException ex
         (log/error ex "Failed to assign the server's public key")
         (throw ex)))))
