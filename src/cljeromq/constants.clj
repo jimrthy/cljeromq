@@ -2,9 +2,12 @@
   ;; TODO: Probably shouldn't be relying on an external logger.
   ;; Then again, the alternatives seem worse.
   (:require [taoensso.timbre :as timbre])
+  ;; TODO: Get rid of this dependency
   (:import [org.zeromq ZMQ]))
 
-(def const {
+(def const {:context-option {:threads 1  ; default: 1
+                             :max-sockets 2  ; default: 1024
+                             }
             :control {
                       ;; Non-blocking send/recv
                       :no-block ZMQ/NOBLOCK
@@ -17,6 +20,11 @@
                       ;; More message parts are coming
                       :sndmore ZMQ/SNDMORE
                       :send-more ZMQ/SNDMORE}
+
+            :device {:forwarder ZMQ/FORWARDER  ; 2
+                     :queue ZMQ/QUEUE   ; 3
+                     :streamer ZMQ/STREAMER  ; 1
+                     }
             
             ;;; Socket types
             :socket-type {
@@ -68,6 +76,8 @@
                              ;; The server just needs the private key
                              ;; The client's what needs this.
                              :curve-server-key 50  ; ZMQ/CURVE_SERVER_KEY
+                             :subscribe 6
+                             :unsubscribe 7
                              }
             ;; Named magical numbers/strings
             :flag

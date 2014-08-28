@@ -20,8 +20,9 @@
   (:require [cljeromq.constants :as K]
             [clojure.edn :as edn]
             [net.n01se.clojure-jna :as jna]
-            [ribol.core :refer (raise)])
-  (:import [com.sun.jna Integer Native Pointer String]
+            [ribol.core :refer (raise)]
+            [schema.core :as s])
+  (:import [com.sun.jna IntegerType Native Pointer NativeString]
            [java.util Random]
            [java.nio ByteBuffer]
            #_[org.zeromq ZMQ ZMQ$Context ZMQ$Poller ZMQ$Socket]))
@@ -31,11 +32,12 @@
 The name is stolen from the C library I'm actually using."
   []
   (let [code (jna/invoke Integer zmq/zmq_errno)
-        message (jna/invoke String zmq/zmq_strerror code)]
+        message (jna/invoke NativeString zmq/zmq_strerror code)]
+    ;; TODO: Convert code into a meaningful symbol
     {:code code
-     :message message}))
+     :message (.toString message)}))
 
-(defn context
+(s/defn context :- Pointer
   "Create a messaging contexts.
 threads is the number of threads to use. Should never be larger than (dec cpu-count).
 
@@ -47,11 +49,22 @@ Contexts are designed to be thread safe.
 There are very few instances where it makes sense to
 do anything more complicated than creating the context when your app starts and then calling
 terminate! on it just before it exits."
-  ([thread-count]
-     (let [ctx (jna/invoke Pointer zmq/zmq_ctx_new)
-           thread-count-success (jna/invoke Integer zmq/zmq_ctx_set ctx option thread-count)]
-       (when (< thread-count success 0)
-         (raise [:fail {:reason (errno)}]))))
+  ([thread-count :- s/Integer]  ; I'm getting a compiler about no such var. Huh?
+     (io!
+      (let [ctx (jna/invoke Pointer zmq/zmq_ctx_new)
+            option (-> K/const :context-option :threads)
+            thread-count-success (jna/invoke IntegerType zmq/zmq_ctx_set ctx option thread-count)]
+        (when (< thread-count-success 0)
+          (raise [:fail {:reason (errno)}]))
+        ctx)))
+  ([thread-count :- s/Integer
+    max-sockets :- s/Integer]
+     (let [ctx (context thread-count)
+           option (-> K/const :context-option :max-sockets)
+           max-socket-success (jna/invoke IntegerType zmq/zmq_ctx_set ctx option max-sockets)]
+       (when (< max-socket-success 0)
+         (raise [:fail {:reason (errno)}]))
+       ctx))
   ([]
      (let [cpu-count (.availableProcessors (Runtime/getRuntime))]
        ;; Go with maximum as default
@@ -61,8 +74,12 @@ terminate! on it just before it exits."
   "Stop a messaging context.
 If you have outgoing sockets with a linger value (which is the default), this will block until
 those messages are received."
-  [^ZMQ$Context ctx]
-  (io! (.term ctx)))
+  [^ Pointer ctx]
+  (io! 
+   (let [success (jna/invoke IntegerType zmq/zmq_term ctx)]
+     (when-not (= 0 success)
+       (raise [:not-implemented {:reason "Write this"
+                                 :code (errno)}])))))
 
 (defmacro with-context
   "Convenience macro for situations where you can create, use, and kill the context in one place.
@@ -72,17 +89,19 @@ Seems like a great idea in theory, but doesn't seem all that useful in practice"
      (try ~@body
           (finally (terminate! ~id)))))
 
-(defn socket!
-  "Create a new socket."
-  [^ZMQ$Context context type]
-  (let [real-type (K/sock->const type)]
-    (io! (.socket context real-type))))
+(s/defn socket!
+  "Create a new socket.
+TODO: the type really needs to be an enum of keywords"
+  [^Pointer ctx type :- s/Keyword]
+  (let [^Integer real-type (K/sock->const type)]
+    (io! (jna/invoke Pointer zmq/zmq_socket context real-type))))
 
 (defn close!
   "You're done with a socket.
-TODO: Manipulate the socket's linger value appropriately."
-  [^ZMQ$Socket s]
-  (io! (.close s)))
+TODO: Manipulate the socket's linger value to 0
+before we try to close it.."
+  [^Pointer s]
+  (io! (jna/invoke IntegerType zmq/zmq_close s)))
 
 (defmacro with-socket!
   "Convenience macro for handling the start/use/close pattern"
@@ -91,43 +110,77 @@ TODO: Manipulate the socket's linger value appropriately."
      (try ~@body
           (finally (close! ~name)))))
 
-(comment (defn queue
-  "Forwarding device for request-reply messaging.
-cljzmq doesn't seem to have an equivalent.
-It almost definitely needs one.
-FIXME: Fork that repo, add this, send a Pull Request."
-  [^ZMQ$Context context ^ZMQ$Socket frontend ^ZMQ$Socket backend]
-  (ZMQQueue. context frontend backend)))
+(s/defn intermediary-device :- s/Integer
+  [direction :- s/Keyword  ; Q: Have do I specify the legal values?
+   ^Pointer frontend
+   ^Pointer backend]
+  (io! (jna/invoke Integer zmq/zmq_device (direction (:device K/const)) :queue frontend backend)))
 
-(defn bind!
+(s/defn queue :- s/Integer
+  "Forwarding device for request-reply messaging.
+Only for Router/Dealer sockets.
+Runs in the current thread. Returns when the current
+context is closed.
+It seems like using a poller would probably be
+a generally better approach.
+Q: What does 'current context' actually mean?"
+  [^Pointer dealer ^Pointer router]
+  (intermediary-device :queue dealer router))
+
+(s/defn forwarder :- s/Integer
+  "Like a Queue, but from publishers to subscribers"
+  [^Pointer subscriber ^Pointer publisher]
+  (intermediary-device :forwarder subscriber publisher))
+
+(s/defn streamer :- s/Integer
+  "Like a Queue, but from pushers to pullers"
+  [^Pointer puller ^Pointer pusher]
+  (intermediary-device :streamer puller pusher))
+
+(s/defn bind!
   "Associate this socket with a stable network interface/port.
 Any given machine can only have one socket bound to one endpoint at any given time.
 
 It might be helpful (though ultimately misleading) to think of this call as setting
 up the server side of an interaction."
-  [^ZMQ$Socket socket url]
-  (io! (.bind socket url)))
+  [^Pointer socket 
+   url :- s/Str]
+  (io! (jna/invoke Integer zmq/zmq_bind socket (NativeString. url))))
 
-(defn bind-random-port!
+(s/defn bind-random-port! :- s/Integer
   "Binds to the first free port. Endpoint should be of the form
 \"<transport>://address\". (It automatically adds the port).
-Returns the port!"
-  ([^ZMQ$Socket socket endpoint]
+Returns the port"
+  ([^Pointer socket endpoint]
      (let [port (bind-random-port! socket endpoint 49152 65535)]
        (println (str "Managed to bind to port '" port "'"))
        port))
-  ([^ZMQ$Socket socket endpoint min]
+  ([^Pointer socket endpoint min]
      (bind-random-port! socket endpoint min 65535))
-  ([^ZMQ$Socket socket endpoint min max]
-     (io! (.bindToRandomPort socket endpoint min max))))
+  ([^Pointer socket endpoint :- s/Str min :- s/Integer max :- s/Integer]
+     (io!
+      (comment (.bindToRandomPort socket endpoint min max))
+      (raise :not-implemented))))
 
-(defn unbind!
-  [^ZMQ$Socket socket url]
-  (io! (.unbind socket url)))
+(s/defn unbind! :- s/Integer
+  [^Pointer socket
+   url :- s/Str]
+  (io!
+   (let [result (jna/invoke Integer zmq/unbind socket (NativeString. url))]
+     ;; Documented return values are:
+     ;; 0 - success
+     ;; EINVAL - invalid URL
+     ;; ETERM - context associated with socket was terminated
+     ;; ENOTSOCK  - not a valid socket
+     (when (not= 0 result)
+       (raise :not-implemented))
+     result)))
 
-(defn bound-socket!
+(s/defn bound-socket!
   "Return a new socket bound to the specified address"
-  [ctx type url]
+  [^Pointer ctx
+   type :- s/Keyword
+   url :- s/Str]
   (let [s (socket! ctx type)]
     (bind! s url)
     s))
@@ -155,12 +208,12 @@ Returns the port!"
          (~@body)))))
 
 (defn connect!
-  [#^ZMQ$Socket socket url]
-  (io! (.connect socket url)))
+  [^Pointer socket ^String url]
+  (io! (jna/invoke Integer zmq/zmq_connect socket (NativeString. url))))
 
 (defn disconnect!
-  [#^ZMQ$Socket socket url]
-  (io! (.disconnect socket url)))
+  [^Pointer socket ^String url]
+  (io! (jna/invoke Integer zmq/zmq_disconnect socket (NativeString. url))))
 
 (defmacro with-connected-socket!
   [[name ctx type url] & body]
@@ -180,30 +233,52 @@ Returns the port!"
     (connect! s url)
     s))
 
+(s/defn set-sock-opt
+  [^Pointer socket
+   option-name :- s/Integer
+   ^Pointer option-value
+   option-length :- s/Integer]
+  ;; This should probably be idempotent. So it doesn't matter whether
+  ;; it happens inside a transaction.
+  ;; TODO: Get rid of the io! Add a do- prefix to the name.
+  ;; Do the same w/ pretty much everything that calls it.
+  (let [success (io! (jna/invoke IntegerType zmq/zmq_setsockopt
+                                 socket
+                                 option-name
+                                 option-value
+                                 option-length))]
+    (when (not= success)
+      (raise [:fail :reason (errno)]))))
+
 (defn subscribe!
-  ([#^ZMQ$Socket socket #^String topic]
-     (doto socket
-       (io! (.subscribe (.getBytes topic)))))
-  ([#^ZMQ$Socket socket]
+  "SUB sockets won't start receiving messages until they've subscribed"
+  ([^Pointer socket ^String topic]
+     (let [option (->K/const :socket-options :subscribe)]
+       (set-sock-opt socket option (NativeString. topic) (count topic))))
+  ([^Pointer socket]
+     ;; Subscribes to all incoming messages
      (subscribe! socket "")))
 
 (defn unsubscribe!
-  ([#^ZMQ$Socket socket #^String topic]
-     (doto socket
-       (io! (.unsubscribe (.getBytes topic)))))
-  ([#^ZMQ$Socket socket]
+  ([^Pointer socket ^String topic]
+     (let [option (->K/const :socket-options :unsubscribe)]
+       (set-sock-opt socket option (NativeString. topic) (count topic))))
+  ([^Pointer socket]
      ;; Q: This unsubscribes from everything, doesn't it?
      (unsubscribe! socket "")))
 
 ;;; Send
 
-(defmulti send! (fn [#^ZMQ$Socket socket message & flags]
+(defmulti send! (fn [^Pointer socket message & flags]
                   (class message)))
 
 (defmethod send! bytes
-  ([#^ZMQ$Socket socket #^bytes message flags]
-     (io! (.send socket message (K/flags->const flags))))
-  ([#^ZMQ$Socket socket #^bytes message]
+  ([^Pointer socket ^bytes message flags]
+     ;; This is going to fail miserably, because I need
+     ;; to convert the message to a zmq_msg_t*
+     (raise :start-here)
+     (io! (jna/invoke IntegerType zmq/zmq_send socket message (K/flags->const flags))))
+  ([^Pointer socket ^bytes message]
      (io! (.send socket message (K/flags->const :dont-wait)))))
 
 (defmethod send! String
