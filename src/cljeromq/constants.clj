@@ -25,7 +25,30 @@
                      :queue ZMQ/QUEUE   ; 3
                      :streamer ZMQ/STREAMER  ; 1
                      }
+
+            :error {:zero 156384712  ; random baseline magic # for 0mq-specific errors
+                    :again 11
+                    :fault 14
+                    :fsm 156384763
+                    :interrupted 4
+                    :not-socket 156384721
+                    :not-supported 156384713
+                    :terminated 156384765}
             
+            ;; TODO: Access these via iroh?
+            :socket-options {:curve-server 47   ; ZMQ/CURVE_SERVER  ; 1 for yes, 0 for no
+                             ;; the next two are for the client
+                             :curve-public-key 48  ; ZMQ/CURVE_PUBLIC_KEY
+                             :curve-secret-key 49  ; ZMQ/CURVE_SECRET_KEY
+                             ;; The server just needs the private key
+                             ;; The client's what needs this.
+                             :curve-server-key 50  ; ZMQ/CURVE_SERVER_KEY
+                             :identity 5
+                             :receive-more 13
+                             :subscribe 6
+                             :unsubscribe 7
+                             }
+
             ;;; Socket types
             :socket-type {
                           ;; Request/Reply
@@ -64,21 +87,6 @@
                           :xreq ZMQ/XREQ
                           :xrep ZMQ/XREP}
 
-            ;; Q: Does the official cljmq language bindings have these
-            ;; defined yet?
-            ;; A: Yes, it's caught up.
-            ;; But they're private.
-            ;; TODO: Access these via iroh?
-            :socket-options {:curve-server 47   ; ZMQ/CURVE_SERVER  ; 1 for yes, 0 for no
-                             ;; the next two are for the client
-                             :curve-public-key 48  ; ZMQ/CURVE_PUBLIC_KEY
-                             :curve-secret-key 49  ; ZMQ/CURVE_SECRET_KEY
-                             ;; The server just needs the private key
-                             ;; The client's what needs this.
-                             :curve-server-key 50  ; ZMQ/CURVE_SERVER_KEY
-                             :subscribe 6
-                             :unsubscribe 7
-                             }
             ;; Named magical numbers/strings
             :flag
             {:edn "clojure/edn"}})
