@@ -3,23 +3,52 @@
             [cljeromq.core :as mq])
   (:use [midje.sweet]))
 
+(defn push-unencrypted [ctx msg]
+  (println "Plain-text Push Server thread started")
+  (mq/with-socket! [pusher ctx :push]
+    (mq/connect! pusher  "tcp://127.0.0.1:2101")
+    (dotimes [i 10]
+      (comment) (println "Push " (inc i))
+      (mq/send! pusher (str msg i)))))
+
+(facts basic-push-pull
+       (println "Checking plain-text push/pull interaction")
+       (mq/with-context [ctx 2]
+         (mq/with-socket! [puller ctx :pull]
+           (mq/bind! puller "tcp://127.0.0.1:2101")
+           
+           (let [msg "Unencrypted push"
+                 push-thread (future (push-unencrypted ctx msg))]
+             (fact "pulls what was pushed"
+                   (dotimes [i 10]
+                     (mq/recv! puller) => (str msg i)))
+             (fact "What does msg/send return?"
+                   @push-thread => nil)))))
+
 (defn push-encrypted [ctx server-keys msg]
-  (mq/with-bound-socket [pusher ctx :push "tcp://*:2101"]
+  (println "Encrypted Push-Server thread started")
+  (mq/with-socket! [pusher ctx :push]
     (enc/make-socket-a-server! pusher (:private server-keys))
-    (mq/send pusher msg)))
+    (mq/connect! pusher  "tcp://127.0.0.1:2101")
+    (dotimes [i 10]
+      (println "Push " (inc i))
+      (mq/send! pusher (str msg i)))))
 
 (facts basic-socket-encryption
+       (println "Checking encrypted push/pull interaction")
        (mq/with-context [ctx 1]
          (let [server-keys (enc/new-key-pair)
                msg "Encrypted push"
-               push-thread (future (push-encrypted server-keys msg))]
-           (mq/with-connected-socket [puller ctx :pull
-                                      "tcp://localhost:2101"]
+               push-thread (future (push-encrypted ctx server-keys msg))]
+           (mq/with-socket! [puller ctx :pull]
              (let [client-keys (enc/new-key-pair)]
                (enc/prepare-client-socket-for-server! 
                 puller client-keys (:public server-keys))
+               (mq/bind! puller "tcp://127.0.0.1:2101")
                
                (fact "pulls what was pushed"
-                     (mq/recv puller) => msg)
+                     (dotimes [i 10]
+                       (println "Pulling # " (inc i))
+                       (mq/recv! puller) => (str msg i)))
                (fact "What does msg/send return?"
                      @push-thread => nil))))))

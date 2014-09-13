@@ -1,19 +1,113 @@
 (ns cljeromq.constants
   ;; TODO: Probably shouldn't be relying on an external logger.
   ;; Then again, the alternatives seem worse.
-  (:require [taoensso.timbre :as timbre]))
+  (:require [taoensso.timbre :as timbre])
+  ;; TODO: Get rid of this dependency
+  (:import [org.zeromq ZMQ]))
 
 ;;; Basically just copy/pasting a bunch ofmagic numbers, then
 ;;; putting them into dictionaries to make them a little easier
 ;;; (IMO) to cope with
 
-(def const {
-            ;;; Error codes
-            ;;; TODO: There aren't really that many of these. Might as well copy/paste them too
+(def const {:context-option {:threads 1  ; default: 1
+                             :max-sockets 2  ; default: 1024
+                             }
+            :control {
+                      ;; Message options
+                      :more 1
+                      :srcfd 2  ; ???
 
-            ;;; Context Options
-            :context-option {:io-threads 1
-                             :max-sockets 2}
+                      ;; Non-blocking send/recv
+                      :dont-wait 1
+                      :no-block 1   ; deprecated
+
+                      ;; Blocking (default...doesn't seem to be an 
+                      ;; associated named constant)
+                      :wait 0
+                                
+                      ;; More message parts are coming
+                      :sndmore 2
+                      :send-more 2}
+
+            :device {:forwarder ZMQ/FORWARDER  ; 2
+                     :queue ZMQ/QUEUE   ; 3
+                     :streamer ZMQ/STREAMER  ; 1
+                     }
+
+            :error {:zero 156384712  ; random baseline magic # for 0mq-specific errors
+                    :again 11
+                    :fault 14
+                    :fsm 156384763
+                    :interrupted 4
+                    :not-socket 156384721
+                    :not-supported 156384713
+                    :terminated 156384765}
+            
+            :security {:null 0
+                       :plain 1
+                       :curve 2}
+            
+            ;; TODO: Access these via iroh?
+            :socket-options {:affinity 4
+                             :backlog 19
+                             :conflate 54
+                             :connect-rid 61
+                             ;; the next two are for the client
+                             :curve-public-key 48  ; ZMQ/CURVE_PUBLIC_KEY
+                             :curve-secret-key 49  ; ZMQ/CURVE_SECRET_KEY
+                             :curve-server 47  ; 1 for yes, 0 for no
+                             ;; The server just needs the private key
+                             ;; The client's what needs this.
+                             :curve-server-key 50  ; ZMQ/CURVE_SERVER_KEY
+                             :events 15
+                             :fd 14   ;;; ???
+                             :identity 5
+                             :immediate 39
+                             :ipc-filter-gid 60
+                             :ipc-filter-pid 58
+                             :ipc-filter-uid 59
+                             :ipv6 42
+                             :last-endpoint 32
+                             :linger 17
+                             :max-msg-size 22
+                             :mechanism 43
+                             :multicast-hops 25
+                             :plain-server 44
+                             :plain-username 45
+                             :plain-password 46
+                             :probe-router 51
+                             :rate 8
+                             :receive-buffer 12
+                             :rcv-hwm 24
+                             :receive-more 13
+                             :receive-time-out 27
+                             :reconnect-interval 18
+                             :reconnect-interval-max 21
+                             :recovery-interval 9
+                             :req-correlate 52
+                             :req-relaxed 53
+                             :router-handover 56
+                             :router-mandatory 33
+                             :router-raw 41
+                             :send-buffer 11
+                             :send-hwm 23
+                             :send-time-out 28                             
+                             :subscribe 6
+                             :tcp-accept-filter 38
+                             :tcp-keepalive 34
+                             :tcp-keepalive-count 35
+                             :tcp-keepalive-idle 36
+                             :tcp-keepalive-interval 37
+                             :tos 57  ; ????
+                             :type 16
+                             :unsubscribe 7
+                             :xpub-verbose 40
+                             :zap-domain 55
+
+                             ;; deprecated
+                             :ipv4-only 31
+                             }
+
             ;;; Socket types
             :socket-type {
                           ;; Internal 1:1
@@ -54,86 +148,6 @@
                           :xreq 5
                           :xrep 6}
 
-            :socket-options {:affinity 4
-                             :identity 5
-                             :subscribe 6
-                             :unsubscribe 7
-                             :rate 8
-                             :recovery-interval 9
-                             :send-buffer 11
-                             :receive-buffer 12
-                             :receive-more 13
-                             :fd 14   ;;; ???
-                             :events 15
-                             :type 16
-                             :linger 17
-                             :reconnect-interval 18
-                             :backlog 19
-                             :reconnect-interval-max 21
-                             :max-msg-size 22
-                             :send-hwm 23
-                             :rcv-hwm 24
-                             :multicast-hops 25
-                             :receive-time-out 27
-                             :send-time-out 28                             
-                             :last-endpoint 32
-                             :router-mandatory 33
-                             :tcp-keepalive 34
-                             :tcp-keepalive-count 35
-                             :tcp-keepalive-idle 36
-                             :tcp-keepalive-interval 37
-                             :tcp-accept-filter 38
-                             :immediate 39
-                             :xpub-verbose 40
-                             :router-raw 41
-                             :ipv6 42
-                             :mechanism 43
-                             :plain-server 44
-                             :plain-username 45
-                             :plain-password 46
-                             :curve-server 47  ; 1 for yes, 0 for no
-                             ;; the next two are for the client
-                             :curve-public-key 48
-                             :curve-secret-key 49
-                             ;; According to docs, server just needs private key
-                             :curve-server-key 50
-                             :probe-router 51
-                             :req-correlate 52
-                             :req-relaxed 53
-                             :conflate 54
-                             :zap-domain 55
-                             :router-handover 56
-                             :tos 57  ; ????
-                             :ipc-filter-pid 58
-                             :ipc-filter-uid 59
-                             :ipc-filter-gid 60
-                             :connect-rid 61
-
-                             ;; deprecated
-                             :ipv4-only 31
-                             }
-
-            :control {
-                      ;; Message options
-                      :more 1
-                      :srcfd 2  ; ???
-
-                      ;; Blocking (default...doesn't seem to be an 
-                      ;; associated named constant)
-                      :wait 0
-                                
-                      ;; Non-blocking send/recv
-                      :dont-wait 1
-                      :no-block 1   ; deprecated
-
-                      ;; More message parts are coming
-                      :sndmore 2
-                      :send-more 2                      
-                      }
-            :security {:null 0
-                       :plain 1
-                       :curve 2}
-            
             ;; Named magical numbers/strings
             ;; (OK, I made these up)
             :flag
