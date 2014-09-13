@@ -87,14 +87,6 @@ TODO: Manipulate the socket's linger value appropriately."
      (try ~@body
           (finally (close! ~name)))))
 
-(comment (defn queue
-  "Forwarding device for request-reply messaging.
-cljzmq doesn't seem to have an equivalent.
-It almost definitely needs one.
-FIXME: Fork that repo, add this, send a Pull Request."
-  [^ZMQ$Context context ^ZMQ$Socket frontend ^ZMQ$Socket backend]
-  (ZMQQueue. context frontend backend)))
-
 (defn bind!
   "Associate this socket with a stable network interface/port.
 Any given machine can only have one socket bound to one endpoint at any given time.
@@ -193,7 +185,7 @@ Returns the port!"
          (finally
            (disconnect! ~name# ~url#))))))
 
-(defn set-sock-opt!
+(defn- -set-sock-opt!
   "This is probably the biggest reason to use the official JNI bindings.
 And also the biggest reason not.
 Everything in life's a trade-off.
@@ -210,8 +202,13 @@ beats the alternatives."
          (throw (RuntimeException. "Socket Subscription Failure")))))
   ([^Pointer socket ^Integer option-name ^ByteArray option]
      ;; Honestly, this is going to receive an option-name as a keyword, and the actual option as a string
+     ;; So the entire idea is wrong from this perspective
      (throw (RuntimeException. "Get this written"))
      ))
+
+(defn set-sock-opt!
+  ([^Pointer socket ^keyword option ^String value]
+     (throw (RuntimeException. "Get this written"))))
 
 (defn subscribe!
   ([^Pointer socket ^String topic]
