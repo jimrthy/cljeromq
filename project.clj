@@ -5,8 +5,9 @@
             :url "http://www.gnu.org/licenses/lgpl.html"}
   :dependencies [[byte-streams "0.1.3"]
                  [byte-transforms "0.1.3"]
+                 [com.stuartsierra/component "0.2.2"]
                  [com.taoensso/timbre "2.6.2"]
-                 [net.n01se/clojure-jna "1.0.0"]
+                 #_[net.n01se/clojure-jna "1.0.0"]
                  [org.clojure/clojure "1.6.0"]
                  [org.zeromq/jzmq "3.1.1-SNAPSHOT"]
                  [im.chit/ribol "0.4.0"]  ; Because I need *something* to make C-style error handling palatable

@@ -19,13 +19,13 @@
   (:refer-clojure :exclude [proxy send])
   (:require [cljeromq.constants :as K]
             [clojure.edn :as edn]
-            [net.n01se.clojure-jna :as jna]
+            [org.zeromq :as zmq]
             [ribol.core :refer (raise)]
             [schema.core :as s])
   (:import [com.sun.jna IntegerType Native Pointer NativeString]
            [java.util Random]
            [java.nio ByteBuffer]
-           #_[org.zeromq ZMQ ZMQ$Context ZMQ$Poller ZMQ$Socket]))
+           [org.zeromq ZMQ ZMQ$Context ZMQ$Poller ZMQ$Socket]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Schema
