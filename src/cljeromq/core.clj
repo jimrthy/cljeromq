@@ -240,21 +240,21 @@ Returns the port"
            ;; going away pretty much immediately.
            (unbind! ~name# ~url))))))
 
+
+;;; TODO: Desperately need to test this
 (defmacro with-randomly-bound-socket!
   [[name port-name ctx type url] & body]
-  (let [name# name
-        port-name# port-name
-        url# url]
-    `(with-socket! [~name# ~ctx ~type]
-       (let [~port-name# (bind-random-port! ~name# ~url#)]
-         (println "DEBUG only: randomly bound port # " ~port-name#)
-         (~@body)))))
+  `(let [url# ~url]
+     (with-socket! ['~name ~ctx ~type]
+       (let ['~port-name (bind-random-port! '~name url#)]
+         (println "DEBUG only: randomly bound port # " '~port-name)
+         ~body))))
 
 (s/defn connect!
-  [socket :- ^ZMQ$Socket url :- s/Str]
+  [socket :- ZMQ$Socket url :- s/Str]
   (io! (.connect socket url)))
 
-(defn disconnect!
+(s/defn disconnect!
   [socket :- ZMQ$Socket url :- s/Str]
   (io! (.disconnect socket url)))
 
@@ -286,12 +286,12 @@ Returns the port"
      ;; Subscribes to all incoming messages
      (subscribe! socket "")))
 
-(defn unsubscribe!
+(s/defn unsubscribe!
   ([socket :- ZMQ$Socket topic :- s/Str]
    (io! (.unsubscribe socket (.getBytes topic))))
   ([socket :- ZMQ$Socket]
-     ;; Q: This *does* unsubscribe from everything, doesn't it?
-     (unsubscribe! socket "")))
+   ;; Q: This *does* unsubscribe from everything, doesn't it?
+   (unsubscribe! socket "")))
 
 ;;; Send
 
@@ -301,17 +301,18 @@ Returns the port"
 (defmethod send! bytes
   ([^ZMQ$Socket socket ^bytes message flags]
    (when-not (.send socket message 0 flags)
-     (let [err-code (errno)
-           msg
-           (condp (= (-> K/const :error (:code %))) err-code
-             :again "Non-blocking mode requested, but message cannot currently be sent"
-             :not-supported "Socket cannot send"
-             :fsm "Cannot send in current state"
-             :terminated "Socket's Context has been terminated"
-             :not-socket "Socket invalid"
-             :interrupted "Interrupted by signal"
-             :fault "Invalid message")]
-       (raise [:fail {:reason err-code :message msg}]))))
+     (comment (let [err-code (errno)
+                    msg
+                    (condp (= (-> K/const :error (:code %))) err-code
+                      :again "Non-blocking mode requested, but message cannot currently be sent"
+                      :not-supported "Socket cannot send"
+                      :fsm "Cannot send in current state"
+                      :terminated "Socket's Context has been terminated"
+                      :not-socket "Socket invalid"
+                      :interrupted "Interrupted by signal"
+                      :fault "Invalid message")]
+                (raise [:fail {:reason err-code :message msg}])))
+     (raise {:not-implemented "What went wrong?"})))
   ([^ZMQ$Socket socket ^bytes message]
      (io! (send! socket message (K/flags->const :dont-wait)))))
 
@@ -334,7 +335,7 @@ Returns the port"
      ;; serialization at all, but it makes sense to at least start
      ;; this out here.
      (send! socket (-> K/const :flag :edn), :send-more)
-     (send! socket (prstr message) flags))
+     (send! socket (pr-str message) flags))
   ([^ZMQ$Socket socket message]
      (send! socket message :dont-wait)))
 
@@ -396,7 +397,7 @@ More importantly (probably) is EDN."
         (let
             [s (String. binary)]
           (println "Received:\n" s)
-          (if (and (has-more socket)
+          (if (and (has-more? socket)
                    (= s (-> K/const :flag :edn)))
             (do
               (println "Should be more pieces on the way")
@@ -514,20 +515,21 @@ Of course, a big part of the point to real pollers is
 dealing with multiple sockets"
   ;; It's pretty blatant that I haven't had any time to
   ;; do anything that resembles testing this code.
-  `(let [name# ~poller-name
-         ctx# ~context
-         s# ~socket]
-     (let [~name# (mq/poller ~ctx#)]
-       (cljeromq.core/register-socket-in-poller! ~name# ~s# :poll-in :poll-err)
-       (try
-         ~@body
-         (finally
-           (cljeromq.core/unregister-socket-in-poller! ~name# ~s#))))))
+  `(let [~poller-name (cljeromq.core/poller ~context)]
+     ;; poller-name might be OK to deref multiple times, since it's
+     ;; almost definitely a symbol.
+     ;; That same is true of socket, isn't it?
+     ;; TODO: Ask Steven
+     (cljeromq.core/register-socket-in-poller! ~poller-name ~socket :poll-in :poll-err)
+     (try
+       ~@body
+       (finally
+         (cljeromq.core/unregister-socket-in-poller! ~poller-name ~socket)))))
 
-(defn socket-poller-in!
+(s/defn socket-poller-in!
   "Attach a new poller to a seq of sockets.
 Honestly, should be smarter and just let me poll on a single socket."
-  [sockets]
+  [sockets :- [ZMQ$Socket]]
   (let [checker (poller (count sockets))]
     (doseq [s sockets]
       (register-socket-in-poller! s checker))
