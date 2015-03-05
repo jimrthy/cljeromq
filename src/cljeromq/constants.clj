@@ -1,11 +1,19 @@
 (ns cljeromq.constants
-  ;; TODO: Probably shouldn't be relying on an external logger.
-  ;; Then again, the alternatives seem worse.
-  (:require [taoensso.timbre :as timbre])
+  (:require [schema.core :as s]
+            [taoensso.timbre :as timbre])
   ;; TODO: Get rid of this dependency
   (:import [org.zeromq ZMQ]))
 
-(def const {:context-option {:threads 1  ; default: 1
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Schema
+
+(def keyword-or-seq (s/either s/Keyword [s/Keyword]))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Gory details
+
+(def const {:context-option {
+                             :threads 1  ; default: 1
                              :max-sockets 2  ; default: 1024
                              }
             :control {
@@ -91,13 +99,17 @@
             :flag
             {:edn "clojure/edn"}})
 
-(defn control->const
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Public
+
+(s/defn control->const :- s/Int
   "Convert a control keyword to a ZMQ constant"
-  [key]
+  [key :- s/Keyword]
   (timbre/trace "Extracting " key)
   ((const :control) key))
 
-(defn flags->const ^long [flags]
+(s/defn flags->const :- s/Int
+  [flags :- keyword-or-seq]
   "Use in conjunction with control-const to convert a series
 of/individual keyword into a logical-or'd flag to control
 socket options."
@@ -105,9 +117,9 @@ socket options."
     (reduce bit-or (map control->const flags))
     (control->const flags)))
 
-(defn sock->const
+(s/defn sock->const :- s/Int
   "Convert a socket keyword to a ZMQ constant"
-  [key]
+  [key :- s/Keyword]
   ((const :socket-type) key))
 
 (defn option->const
@@ -115,10 +127,12 @@ socket options."
   [key]
   (-> :socket-options const key))
 
-(defn version
+(s/defn version :- {:major s/Int
+                    :minor s/Int
+                    :patch s/Int}
   "Return the 0mq version number as a vector"
   []
   (let [major (ZMQ/getMajorVersion)
         minor (ZMQ/getMinorVersion)
         patch (ZMQ/getPatchVersion)]
-    [major minor patch]))
+    {:major major :minor minor :patch patch}))
