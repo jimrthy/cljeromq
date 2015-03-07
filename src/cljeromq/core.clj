@@ -269,18 +269,18 @@ Returns the port"
 
 (defmethod send! :default
   ([^ZMQ$Socket socket message flags]
-     (println "Default Send trying to transmit:\n" message "\n(a"
-              (class message) ")")
-     ;; For now, assume that we'll only be transmitting something
-     ;; that can be printed out in a form that can be read back in
-     ;; using eval.
-     ;; The messaging layer really shouldn't be responsible for
-     ;; serialization at all, but it makes sense to at least start
-     ;; this out here.
-     (send! socket (-> K/const :flag :edn), :send-more)
-     (send! socket (pr-str message) flags))
+   (comment (println "Default Send trying to transmit:\n" message "\n(a"
+                     (class message) ")"))
+   ;; For now, assume that we'll only be transmitting something
+   ;; that can be printed out in a form that can be read back in
+   ;; using eval.
+   ;; The messaging layer really shouldn't be responsible for
+   ;; serialization at all, but it makes sense to at least start
+   ;; this out here.
+   (send! socket (-> K/const :flag :edn), :send-more)
+   (send! socket (pr-str message) flags))
   ([^ZMQ$Socket socket message]
-     (send! socket message :dont-wait)))
+   (send! socket message :dont-wait)))
 
 (s/defn send-partial! [socket :- ZMQ$Socket message]
   "I'm seeing this as a way to send all the messages in an envelope, except 

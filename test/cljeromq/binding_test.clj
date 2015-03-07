@@ -9,6 +9,7 @@
   (testing "Basic inproc req/rep handshake test"
     (let [uri "inproc://a-test-1"
           ctx (ZMQ/context 1)]
+      (println "Checking req/rep unencrypted inproc")
       (try
         (let [req (.socket ctx ZMQ/REQ)]
           (try
@@ -43,6 +44,7 @@
   (testing "TCP REP/REQ handshake"
     (let [uri "tcp://127.0.0.1:8592"
           ctx (ZMQ/context 1)]
+      (println "Basic rep/req unencrypted TCP test")
       (try
         (let [req (.socket ctx ZMQ/REQ)]
           (try
@@ -79,6 +81,7 @@
           client-public (.publicKey client-keys)
           client-secret (.privateKey client-keys)
           ctx (ZMQ/context 1)]
+      (println "Encrypted Router-Dealer test")
       (try
         (let [router (.socket ctx ZMQ/ROUTER)]
           (try
@@ -112,6 +115,7 @@
         server-keys (ZCurveKeyPair/Factory)
         ctx (ZMQ/context 1)
         in (.socket ctx ZMQ/REQ)]
+    (println "Encrypted req/rep inproc test")
     (.makeIntoCurveClient in client-keys (.privateKey server-keys))
     (.bind in "inproc://reqrep")
 
@@ -136,7 +140,7 @@
               (is (or false true))))
           (let [response (.recv in 0)]
             (is (= (String. rep) (String. response))))))))
-  (comment (println "Simple CURVE checked")))
+  (println "Simple CURVE checked"))
 
 (deftest test-encrypted-push-pull
   "Translated directly from my java unit test"
@@ -144,6 +148,7 @@
         server-keys (ZCurveKeyPair/Factory)
         ctx (ZMQ/context 1)
         in (.socket ctx ZMQ/PUSH)]
+    (println "Encrypted push/pull inproc test")
     (.makeIntoCurveClient in client-keys (.privateKey server-keys))
     (.bind in "inproc://reqrep")
 
@@ -167,6 +172,7 @@
         server-keys (ZCurveKeyPair/Factory)
         ctx (ZMQ/context 1)
         in (.socket ctx ZMQ/DEALER)]
+    (println "Encrypted router-dealer inproc test")
     (.makeIntoCurveClient in client-keys (.privateKey server-keys))
     (.setIdentity in "basic router/dealer encryption check")
     (.bind in "inproc://reqrep")
@@ -206,13 +212,14 @@
           (let [_ (.recv in 0)
                 response (.recv in 0)]
             (is (= (String. rep) (String. response))))))))
-  (comment) (println "Dealer<->Router CURVE checked"))
+  (println "Dealer<->Router CURVE checked"))
 
 (deftest test-encrypted-router-dealer-over-tcp
   (let [client-keys (ZCurveKeyPair/Factory)
         server-keys (ZCurveKeyPair/Factory)
         ctx (ZMQ/context 1)
         in (.socket ctx ZMQ/DEALER)]
+    (println "Encrypted router-dealer TCP test")
     (.makeIntoCurveClient in client-keys (.privateKey server-keys))
     (.bind in "tcp://*:54398")
 
@@ -248,9 +255,10 @@
           (println "Encrypted Dealer->Router over TCP complete"))))))
 
 (deftest test-unencrypted-router-dealer-over-tcp
-  "Translated directly from my java unit test"
+  "Translated directly from the jzmq unit test"
   (let [ctx (ZMQ/context 1)
         in (.socket ctx ZMQ/DEALER)]
+    (println "Unencrypted router/dealer over TCP")
     (.bind in "tcp://*:54398")
 
     (let [out (.socket ctx ZMQ/ROUTER)]
@@ -285,6 +293,7 @@
   (testing "Because communication is boring until the principals can swap messages"
     ;; Both threads block at receiving. Have verified that this definitely works in python
     (let [ctx (ZMQ/context 1)]
+      (println "Minimal rep/dealer unencrypted over TCP")
       (try
         (let [router (.socket ctx ZMQ/REP)]
           (try

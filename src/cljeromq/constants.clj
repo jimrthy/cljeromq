@@ -105,7 +105,7 @@
 (s/defn control->const :- s/Int
   "Convert a control keyword to a ZMQ constant"
   [key :- s/Keyword]
-  (println "Extracting " key)
+  (comment (println "Extracting " key))
   ((const :control) key))
 
 (s/defn flags->const :- s/Int
