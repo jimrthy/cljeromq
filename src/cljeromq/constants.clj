@@ -1,7 +1,7 @@
 (ns cljeromq.constants
-  (:require [schema.core :as s]
-            [taoensso.timbre :as timbre])
-  ;; TODO: Get rid of this dependency
+  (:require [schema.core :as s])
+  ;; This dependency's annoying, but the alternative
+  ;; is to just copy/paste its named constants.
   (:import [org.zeromq ZMQ]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -105,7 +105,7 @@
 (s/defn control->const :- s/Int
   "Convert a control keyword to a ZMQ constant"
   [key :- s/Keyword]
-  (timbre/trace "Extracting " key)
+  (println "Extracting " key)
   ((const :control) key))
 
 (s/defn flags->const :- s/Int

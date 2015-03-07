@@ -37,6 +37,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Helpers
 
+;;; TODO: Really do need something along these lines
+;;; for diagnosing problems
 (comment (defn errno
   "What is the 0mq error state?
   The name is stolen from the C library I'm actually using."
@@ -46,65 +48,6 @@
     ;; TODO: Convert code into a meaningful symbol
     {:code code
      :message (.toString message)})))
-
-(comment (defn allocate-buffer
-           [length]
-           (let [msg-buffer (jna/make-cbuf 32) ; Magic number from zmq.h
-                 msg-struct-ptr (jna/pointer msg-buffer)]
-             (when (< 0 length)
-               (let [init-success (jna/invoke IntegerType zmq/zmq_msg_init_size msg-struct-ptr length)]
-                 (when (not= init-success 0)
-                   (raise [:fail {:reason "Message buffer init failed. Undefined condition"}]))))
-             msg-struct-ptr)))
-
-(comment (s/defn set-sock-opt
-           [^Socket socket
-            option-name :- s/Int
-            ^Pointer option-value
-            option-length :- s/Int]
-           ;; This should probably be idempotent. So it doesn't matter whether
-           ;; it happens inside a transaction.
-           ;; TODO: Get rid of the io! Add a do- prefix to the name.
-           ;; Do the same w/ pretty much everything that calls it.
-           (let [success (io! (jna/invoke IntegerType zmq/zmq_setsockopt
-                                          socket
-                                          option-name
-                                          option-value
-                                          option-length))]
-             (when (not= success)
-               (raise [:fail :reason (errno)]))))
-
-         (s/defn set-key-sock-opt
-           [^Socket socket
-            option-name :- s/Keyword
-            ^Pointer option-value
-            option-length :- s/Int]
-           (let [option (-> K/const :socket-options option-name)]
-             (set-sock-opt socket option option-value option-length)))
-
-         (defn read-sock-opt
-           [^Socket socket
-            option-name :- s/Int
-            max-length]
-           (let [raw-value-buffer (jna/make-cbuf max-length)
-                 value-buffer (jna/pointer raw-value-buffer)
-                 raw-size-buffer (jna/make-cbuf 8)  ; 64-bit size_t
-                 size-buffer (jna/pointer raw-size-buffer)
-                 success (jna/invoke IntegerType zmq/zmq_getsockopt socket option-name value-buffer size-buffer)]
-             (when (not= success 0)
-               (raise :not-implemented))
-             (.getByteBuffer value-buffer 0 (.getLong size-buffer 0))))
-
-         (defn read-sock-int-opt
-           [^Socket socket
-            option-name :- s/Int]
-           (let [result-buffer (read-sock-opt socket option-name 8)]
-             (.getInt result-buffer 0)))
-
-         (defn read-key-sock-int-opt
-           [^Socket socket
-            option-name :- s/Keyword]
-           (read-sock-int-opt socket (-> K/const :socket-options option-name))))
 
 (defn has-more?
   [#^ZMQ$Socket sock]
@@ -414,11 +357,6 @@ More importantly (probably) is EDN."
   ([#^ZMQ$Socket socket]
      (recv! socket :wait)))
 
-(defn obsolete-recv-more?
-  [socket]
-  (raise [:obsolete {:reason "Use has-more? instead"}])
-  (io! (.hasReceiveMore socket)))
-
 (s/defn recv-all!
   "Receive all available message parts.
 Q: Does it make sense to accept flags here?
@@ -488,16 +426,6 @@ ISeq and return the next message as it becomes ready."
      (.poll poller))
   ([poller timeout]
      (.poll poller timeout)))
-
-(comment (defn check-poller 
-  "This sort of new-fangledness is why I started this library in the
-first place. I think it's missing the point more than a little if it's already
-in the default language binding.
-
-Not that this is actually doing *anything*
-different."
-  [poller time-out & keys]
-  (check-poller poller time-out keys)))
 
 (defn register-socket-in-poller!
   "Register a socket to poll on." 

@@ -1,13 +1,23 @@
 (ns cljeromq.curve
-  (:require [byte-streams :as b-s]
-            [net.n01se.clojure-jna :as jna]
+  (:require #_[byte-streams :as b-s]
             [cljeromq.constants :as K]
-            [taoensso.timbre :as log])
-  (:import [com.sun.jna Pointer Native]
-           [java.nio ByteBuffer])
+            [cljeromq.core :as cljeromq]
+            [schema.core :as s])
+  (:import [org.zeromq ZCurveKeyPair ZMQ$Context ZMQ$Socket])
   (:gen-class))
 
-(defn new-key-pair
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Schema
+
+(s/def byte-array-type (Class/forName "[B"))
+
+(s/defschema key-pair {:public byte-array-type
+                       :private byte-array-type})
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Public
+
+(s/defn new-key-pair :- key-pair
   "Return a map of new public/private keys in ByteBuffers.
 It's very tempting to return them as Strings instead, because
 that seems like it would be easiest to deal with. But I
@@ -19,28 +29,19 @@ array if you need that.
 e.g.
 ;; (def s (String. (.array buffer)))"
   []
-  (let [private (ByteBuffer/allocate 41)  ; TODO: Use make-cbuf instead
-        public (ByteBuffer/allocate 41)
-        success (jna/invoke Integer zmq/zmq_curve_keypair
-                            public private)]
-    (if (= 0 success)
-      {:public public
-       :private private}
-      (throw (RuntimeException. "Creating curve keypair failed")))))
+  (let [pair (ZCurveKeyPair/Factory)]
+       {:public (.getPublicKey pair)
+        :private (.getPrivateKey pair)}))
 
-(defn make-socket-a-server!
+(s/defn make-socket-a-server!
   "Adjust sock so that it's ready to serve CURVE-encrypted messages.
 Documentation seems fuzzy about whether or not it also needs to set
 the public key."
-  [sock private-key]
-  (jna/invoke Integer zmq/zmq_setsockopt sock
-              (K/option->const :curve-server)
-              1
-              (Native/getNativeSize Integer))
-  (jna/invoke Integer zmq/zmq_setsockopt sock
-              (K/option->const :curve-server-key)
-              private-key
-              41)
+  [sock :- ZMQ$Socket
+   private-key :- byte-array-type]
+  (.makeIntoCurveServer sock private-key)
+
+  ;; TODO: Move this comment into jzmq
   ;; official tests also set the ZMQ_IDENTITY option.
   ;; Q: What does that actually do?
   ;; A: It's really for clients that might drop
@@ -56,59 +57,27 @@ the public key."
   ;; So...probably a good idea to do, at least in theory.
   )
 
-(defn prepare-client-socket-for-server!
+(s/defn prepare-client-socket-for-server!
   "Adjust socket options to make it suitable for connecting as
 a client to a server identified by server-key
 TODO: I'm mixing/matching JNA and JNI.
 Which seems like a truly horrid idea."
-  [sock {:keys [public private :as client-key-pair]} server-public-key]
-  (let [server-key (b-s/to-byte-array server-public-key)
-        client-pubkey (b-s/to-byte-array public)
-        client-prvkey (b-s/to-byte-array private)]
-    ;; sock is an instance of ZMQ$Socket. Can't pass that as
-    ;; a Pointer.
-    (comment (try
-               (.setLongSockopt sock (K/option->const :curve-server) 0)
-               (catch RuntimeException ex
-                 (log/error ex "Failed to flag the socket as not-a-server")
-                 (throw ex))))
-    (try
-      (jna/invoke Integer zmq/zmq_setsockopt sock
-                  (K/option->const :curve-public-key)
-                  client-pubkey
-                  41)
-      (catch RuntimeException ex
-        (log/error ex "Failed to assign the client's public key")
-        (throw ex)))
-    (try
-      (jna/invoke Integer zmq/zmq_setsockopt sock
-                  (K/option->const :curve-secret-key)
-                  client-prvkey
-                  41)
-      (catch RuntimeException ex
-        (log/error ex "Failed to assign the client's private key")
-        (throw ex)))
-    (try
-      (let [opt (K/option->const :curve-server-key)]
-        (comment (log/info "Trying to set server key: " server-key " (a " (class server-key)
-                           "\npulled from " server-public-key ", a " (class server-public-key) ")\naka\n"
-                           (String. server-key) " (which is " (count server-key) "bytes long.\nThis is option # " opt
-                           "\non " sock " -- a " (class sock)))
-      (jna/invoke Integer zmq/zmq_setsockopt sock
-                  opt
-                  server-key
-                  41))
-      (catch RuntimeException ex
-        (log/error ex "Failed to assign the server's public key")
-        (throw ex)))))
+  [sock :- ZMQ$Socket
+   {:keys [public private :as client-key-pair]} :- key-pair
+   server-public-key :- byte-array-type]
+  (.makeIntoCurveClient sock (ZCurveKeyPair. public private) server-public-key))
 
-(defn server-socket
+(s/defn server-socket :- ZMQ$Socket
   "Create a new socket suitable for use as a CURVE server.
 There isn't really anything interesting here. Create a new
-socket of the specified time then run it through
+socket of the specified type then run it through
 make-socket-a-server!"
-  [ctx type private-key]  
-  (throw (RuntimeException. "Get this written")))
+  [ctx :- ZMQ$Context
+   type :- s/Keyword
+   private-key :- byte-array-type]
+  (let [s (cljeromq/socket! ctx type)]
+    (.make-socket-a-server! s private-key)
+    s))
 
 (defn build-authenticator
   "Used for ZAP to verify clients"
