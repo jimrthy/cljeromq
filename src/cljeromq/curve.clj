@@ -1,5 +1,5 @@
 (ns cljeromq.curve
-  (:require #_[byte-streams :as b-s]
+  (:require [cljeromq.common :as common :refer (byte-array-type)]
             [cljeromq.constants :as K]
             [cljeromq.core :as cljeromq]
             [schema.core :as s])
@@ -8,8 +8,6 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Schema
-
-(s/def byte-array-type (Class/forName "[B"))
 
 (s/defschema key-pair {:public byte-array-type
                        :private byte-array-type})
@@ -30,8 +28,8 @@ e.g.
 ;; (def s (String. (.array buffer)))"
   []
   (let [pair (ZCurveKeyPair/Factory)]
-       {:public (.getPublicKey pair)
-        :private (.getPrivateKey pair)}))
+       {:public (.publicKey pair)
+        :private (.privateKey pair)}))
 
 (s/defn make-socket-a-server!
   "Adjust sock so that it's ready to serve CURVE-encrypted messages.

@@ -113,9 +113,10 @@
   "Use in conjunction with control-const to convert a series
 of/individual keyword into a logical-or'd flag to control
 socket options."
-  (if (seq? flags)
-    (reduce bit-or (map control->const flags))
-    (control->const flags)))
+  (or (if (seq? flags)
+        (reduce bit-or (map control->const flags))
+        (control->const flags))
+      0))
 
 (s/defn sock->const :- s/Int
   "Convert a socket keyword to a ZMQ constant"

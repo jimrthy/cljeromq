@@ -1,18 +1,16 @@
 (ns cljeromq.core-test
   (:import [org.zeromq ZMQ ZMQException])
   (:require [cljeromq.core :as core]
-            [taoensso.timbre :as timbre
-             :refer (trace debug info warn error fatal spy with-log-level)]
             [midje.sweet :refer :all]))
 
 (defn setup
   [uri client-type server-type]
-    (let [ctx (ZMQ/context 1)]
-        (let [client (.socket ctx client-type)]
-            (.connect client uri)
-            (let [server (.socket ctx server-type)]
-              (.bind server uri)
-              [ctx client server]))))
+  (let [ctx (ZMQ/context 1)]
+    (let [client (.socket ctx client-type)]
+      (.connect client uri)
+      (let [server (.socket ctx server-type)]
+        (.bind server uri)
+        [ctx client server]))))
 
 (defn teardown
   ([{:keys [context client server uri unbind-server?]}]
@@ -76,7 +74,7 @@
                (core/bind! receiver url)
                (core/connect! sender url)
 
-               (info "Starting tests")
+               (println "Starting tests")
                ;; TODO: Really should split these up.
                ;; Configuring the context and sockets is part of setUp.
                ;; That would allow tests to proceed after a previous
@@ -87,18 +85,18 @@
 
                (fact "Transmit string"
                      (let [msg "xbcAzy"]
-                       (comment (trace "Sending " msg))
+                       (comment (println "Sending " msg))
                        (core/send! sender msg)
-                       (comment (trace "Receiving"))
+                       (comment (println "Receiving"))
                        (let [received (core/recv! receiver :wait)]
                          received => msg)))
                (comment (trace "String sent and received"))
 
                (fact "Transmit keyword"
                      (let [msg :message]
-                       (trace "Sending: " msg)
+                       (println "Sending: " msg)
                        (core/send! receiver msg)
-                       (trace msg " -- sent")
+                       (println msg " -- sent")
                        (let [received (core/recv! sender)]
                          received => msg)))
 
@@ -136,21 +134,21 @@
            (finally (core/terminate! ctx)))))
 
 (facts "Basic message exchange with macros"
-       (trace "Setting up context")
+       (println "Setting up context")
        (core/with-context [ctx 1]
-         (trace "Setting up receiver")
+         (println "Setting up receiver")
          (core/with-socket! [receiver ctx :rep]
            (fact "Macro created local"
                  receiver => receiver)
-           (trace "Receiver: " receiver)
+           (println "Receiver: " receiver)
 
            ;; TODO: Don't hard-code this port number
            (let [url  "tcp://localhost:10101"]
-             (trace "Binding receiver")
+             (println "Binding receiver")
              (core/bind! receiver url)
-             (trace "Setting up sender")
+             (println "Setting up sender")
              (core/with-socket! [sender ctx :req]
-               (trace "Connecting sender")
+               (println "Connecting sender")
                (core/connect! sender url)
 
                (fact "Connected"
@@ -174,5 +172,5 @@
          (core/with-socket [nothing ctx :rep]
            (let [addr "tcp://*:5678"]
              (core/bind! nothing addr)
-             (trace "Have a socket bound")
+             (println "Have a socket bound")
              (core/unbind! nothing addr)))))

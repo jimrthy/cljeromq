@@ -17,7 +17,8 @@
 
 (ns cljeromq.core
   (:refer-clojure :exclude [proxy send])
-  (:require [cljeromq.constants :as K]
+  (:require [cljeromq.common :as common :refer (byte-array-type)]
+            [cljeromq.constants :as K]
             [clojure.edn :as edn]
             [ribol.core :refer (raise)]
             [schema.core :as s])
@@ -28,11 +29,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Schema
 
-(comment (defrecord Context [] Pointer)
-
-         (defrecord Socket [] Pointer)
-
-         (defrecord zmq-msg-t [Structure]))
+(defmulti send! (fn [^ZMQ$Socket socket message flags]
+                  (class message)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Helpers
@@ -89,7 +87,7 @@ terminate! on it just before it exits."
   ([]
      (let [cpu-count (.availableProcessors (Runtime/getRuntime))]
        ;; Go with maximum as default
-       (context (dec cpu-count)))))
+       (context (max 1 (dec cpu-count))))))
 
 (s/defn terminate!
   "Stop a messaging context.
@@ -238,39 +236,33 @@ Returns the port"
 
 ;;; Send
 
-(defmulti send! (fn [^ZMQ$Socket socket message & flags]
-                  (class message)))
-
-(defmethod send! bytes
-  ([^ZMQ$Socket socket ^bytes message flags]
-   (when-not (.send socket message 0 flags)
-     (comment (let [err-code (errno)
-                    msg
-                    (condp (= (-> K/const :error (:code %))) err-code
-                      :again "Non-blocking mode requested, but message cannot currently be sent"
-                      :not-supported "Socket cannot send"
-                      :fsm "Cannot send in current state"
-                      :terminated "Socket's Context has been terminated"
-                      :not-socket "Socket invalid"
-                      :interrupted "Interrupted by signal"
-                      :fault "Invalid message")]
-                (raise [:fail {:reason err-code :message msg}])))
-     (raise {:not-implemented "What went wrong?"})))
-  ([^ZMQ$Socket socket ^bytes message]
-     (io! (send! socket message (K/flags->const :dont-wait)))))
+(defmethod send! byte-array-type
+  [^ZMQ$Socket socket ^bytes message flags]
+  (println "Sending byte array on" socket "\nFlags:" flags)
+  (when-not (.send socket message 0 flags)
+    (comment (let [err-code (errno)
+                   msg
+                   (condp (= (-> K/const :error (:code %))) err-code
+                     :again "Non-blocking mode requested, but message cannot currently be sent"
+                     :not-supported "Socket cannot send"
+                     :fsm "Cannot send in current state"
+                     :terminated "Socket's Context has been terminated"
+                     :not-socket "Socket invalid"
+                     :interrupted "Interrupted by signal"
+                     :fault "Invalid message")]
+               (raise [:fail {:reason err-code :message msg}])))
+    (raise {:not-implemented "What went wrong?"})))
 
 (defmethod send! String
-  ([^ZMQ$Socket socket ^String message flags]
-     ;; FIXME: Debug only
-     (comment (println "Sending string:\n" message))
-     (send! socket (.getBytes message) (K/flags->const flags)))
-  ([^ZMQ$Socket socket ^String message]
-     (io! (send! socket message :dont-wait))))
+  [^ZMQ$Socket socket ^String message flags]
+  ;; FIXME: Debug only
+  (comment) (println "Sending string:\n'" message "'")
+  (send! socket (.getBytes message) (K/flags->const flags)))
 
 (defmethod send! :default
   ([^ZMQ$Socket socket message flags]
-   (comment (println "Default Send trying to transmit:\n" message "\n(a"
-                     (class message) ")"))
+   (comment) (println "Default Send trying to transmit:\n" message "\n(a"
+                      (class message) ")")
    ;; For now, assume that we'll only be transmitting something
    ;; that can be printed out in a form that can be read back in
    ;; using eval.
@@ -278,9 +270,13 @@ Returns the port"
    ;; serialization at all, but it makes sense to at least start
    ;; this out here.
    (send! socket (-> K/const :flag :edn), :send-more)
-   (send! socket (pr-str message) flags))
-  ([^ZMQ$Socket socket message]
-   (send! socket message :dont-wait)))
+   (send! socket (pr-str message) flags)))
+
+(defn async-send
+  "Send message, returning immediately.
+  Just assume that it succeeded."
+  [^ZMQ$Socket socket ^String message]
+  (io! (send! socket message :dont-wait)))
 
 (s/defn send-partial! [socket :- ZMQ$Socket message]
   "I'm seeing this as a way to send all the messages in an envelope, except 
@@ -334,7 +330,7 @@ More importantly (probably) is EDN."
   ([^ZMQ$Socket socket flags]
      (println "\tListening. Flags: " flags)
      (io!
-      (let [^bytes binary (raw-recv! socket flags)]
+      (when-let [^bytes binary (raw-recv! socket flags)]
         ;; This should be a ByteBuffer now
         (println "\tRaw:\n" binary)
         (let

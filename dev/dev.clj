@@ -1,13 +1,13 @@
 (ns dev
-  (:require #_[cljeromq.system :as system]
+  (:require [cljeromq.core :as mq]
+            [cljeromq.curve :as enc]
             [clojure.java.io :as io]
             [clojure.inspector :as i]
             [clojure.string :as str]
             [clojure.pprint :refer (pprint)]
             [clojure.repl :refer :all]
             [clojure.test :as test]
-            [clojure.tools.namespace.repl :refer (refresh refresh-all)]
-            #_[com.stuartsierra.component :as component]))
+            [clojure.tools.namespace.repl :refer (refresh refresh-all)]))
 
 (comment
   (def system nil)
@@ -51,3 +51,20 @@
     ;; But I don't need it yet.
     (throw (RuntimeException. "Currently broken"))
     (refresh :after 'dev/go-go)))
+
+;; Just because it's annoying to define this every time
+(def ctx (mq/context))
+
+(comment)
+(def pusher (mq/socket! ctx :push))
+(def puller (mq/socket! ctx :pull))
+(comment (mq/bind! puller "inproc://dev-test")
+         (mq/connect! pusher "inproc://dev-test"))
+(def server-keys (enc/new-key-pair))
+(def client-keys (enc/new-key-pair))
+(enc/prepare-client-socket-for-server! puller client-keys (:public server-keys))
+(enc/make-socket-a-server! pusher (:private server-keys))
+(mq/bind! puller "tcp://127.0.0.1:2111")
+(mq/connect! pusher "tcp://127.0.0.1:2111")
+(def push-future (future (mq/send! pusher "Push Test" 0)
+                         (println "Dev message pushed, push-future exiting")))

@@ -11,6 +11,7 @@
   ;; Because java isn't bright enough to find this without help.
   :jvm-opts [~(str "-Djava.library.path=/usr/local/lib:" (System/getenv "LD_LIBRARY_PATH"))]
   :plugins [[lein-midje "3.0.0"]]
+  ;; TODO: This isn't fancy enough to justify using midje
   :profiles {:dev {:dependencies [[midje "1.6.3"]
                                   [org.clojure/tools.namespace "0.2.5"]
                                   [org.clojure/java.classpath "0.2.2"]]
