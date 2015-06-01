@@ -5,7 +5,7 @@
 ;; This probably isn't strictly required, and it gets finicky
 ;; when it comes to the EPL...I am going to have to get an
 ;; opinion from the FSF (and probably double-check with
-;; the 0mq people) to verify how this actually works in 
+;; the 0mq people) to verify how this actually works in
 ;; practice.
 
 ;; TODO: What are the ramifications of using libraries that
@@ -16,6 +16,10 @@
 ;; ground. Then again, so does having this be LGPL.
 
 (ns cljeromq.core
+  "This is where the basic socket functionality happens.
+
+Should probably update the API to keep it compatible w/ cljzmq
+to make swapping back and forth seamless."
   (:refer-clojure :exclude [proxy send])
   (:require [cljeromq.constants :as K]
             [clojure.edn :as edn]
@@ -28,17 +32,14 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Schema
 
-(comment (defrecord Context [] Pointer)
-
-         (defrecord Socket [] Pointer)
-
-         (defrecord zmq-msg-t [Structure]))
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Helpers
 
 ;;; TODO: Really do need something along these lines
 ;;; for diagnosing problems
+;;; This is really a leftover from an obsolete experiment
+;;; where I dabbled with just switching everything to JNA
+;;; instead of going through the "official" JNI binding.
 (comment (defn errno
   "What is the 0mq error state?
   The name is stolen from the C library I'm actually using."
@@ -96,7 +97,7 @@ terminate! on it just before it exits."
 If you have outgoing sockets with a linger value (which is the default), this will block until
 those messages are received."
   [ctx :- ZMQ$Context]
-  (io! 
+  (io!
    (.term ctx)))
 
 (defmacro with-context
@@ -114,10 +115,30 @@ TODO: the type really needs to be an enum of keywords"
   (let [^Integer real-type (K/sock->const type)]
     (io! (.socket ctx real-type))))
 
+(s/defn set-linger!
+  [s :- ZMQ$Socket
+   n :- s/Int]
+  (io!
+   (.setLinger s n)))
+
+(s/defn set-router-mandatory!
+  "This is hugely important
+
+Desperately needs documentation"
+  ([s :- ZMQ$Socket]
+   (set-router-mandatory! s true))
+  ([s :- ZMQ$Socket
+    on :- s/Bool]
+   (.setRouterMandatory s (if on 1 0))))
+
 (s/defn close!
   "You're done with a socket."
   [s :- ZMQ$Socket]
-  (io! (.setLinger s 0)
+  ;; Q: Is it more appropriate to wrap both in io!
+  ;; or let set-linger's io! speak for itself?
+  ;; Maybe I should just be wrapping up the .close
+  ;; here.
+  (io! (set-linger! s 0)
        (.close s)))
 
 (defmacro with-socket!
@@ -283,7 +304,7 @@ Returns the port"
    (send! socket message :dont-wait)))
 
 (s/defn send-partial! [socket :- ZMQ$Socket message]
-  "I'm seeing this as a way to send all the messages in an envelope, except 
+  "I'm seeing this as a way to send all the messages in an envelope, except
 the last.
 Yes, it seems dumb, but it was convenient at one point.
 Honestly, that's probably a clue that this basic idea is just wrong."
@@ -301,7 +322,7 @@ It totally falls apart when I'm just trying to send a string."
     (send-partial! socket m))
   (send! socket ""))
 
-(defn proxy 
+(defn proxy
   "Reads from f-in as long as there are messages available,
 forwarding to f-out.
 
@@ -428,7 +449,7 @@ ISeq and return the next message as it becomes ready."
      (.poll poller timeout)))
 
 (defn register-socket-in-poller!
-  "Register a socket to poll on." 
+  "Register a socket to poll on."
   [#^ZMQ$Socket socket #^ZMQ$Poller poller]
   (io! (.register poller socket :poll-in)))
 
