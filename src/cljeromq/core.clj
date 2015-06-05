@@ -32,6 +32,13 @@ to make swapping back and forth seamless."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Schema
 
+;;; really just aliases so I don't have to look at the icky
+;;; java names everywhere
+
+(def Context ZMQ$Context)
+(def Poller ZMQ$Poller)
+(def Socket ZMQ$Socket)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Helpers
 
@@ -129,7 +136,7 @@ Desperately needs documentation"
    (set-router-mandatory! s true))
   ([s :- ZMQ$Socket
     on :- s/Bool]
-   (.setRouterMandatory s (if on 1 0))))
+   (.setRouterMandatory s on)))
 
 (s/defn close!
   "You're done with a socket."
