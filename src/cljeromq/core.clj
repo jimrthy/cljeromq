@@ -27,7 +27,12 @@ to make swapping back and forth seamless."
             [schema.core :as s])
   (:import [java.util Random]
            [java.nio ByteBuffer]
-           [org.zeromq ZMQ ZMQ$Context ZMQ$Poller ZMQ$Socket]))
+           [org.zeromq
+            ZMQ
+            ZMQException
+            ZMQ$Context
+            ZMQ$Poller
+            ZMQ$Socket]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Schema
@@ -38,6 +43,8 @@ to make swapping back and forth seamless."
 (def Context ZMQ$Context)
 (def Poller ZMQ$Poller)
 (def Socket ZMQ$Socket)
+
+(def byte-array-class (Class/forName "[B"))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Helpers
@@ -163,7 +170,12 @@ It might be helpful (though ultimately misleading) to think of this call as sett
 up the server side of an interaction."
   [socket :- ZMQ$Socket
    url :- s/Str]
-  (io! (.bind socket url)))
+  (try
+    (io! (.bind socket url))
+    (catch ZMQException ex
+      (throw (ex-info "Binding Failed"
+                      {:url url}
+                      ex)))))
 
 (s/defn bind-random-port! :- s/Int
   "Binds to the first free port. Endpoint should be of the form
@@ -188,7 +200,17 @@ Returns the port"
   [socket :- ZMQ$Socket
    url :- s/Str]
   (io!
-   (.unbind socket url)))
+   (try
+     ;; TODO: Check the protocol.
+     ;; If it's inproc, just skip the inevitable
+     ;; failure and pretend everything was kosher.
+     ;; Q: Could that cause problems?
+     (.unbind socket url)
+     (catch ZMQException ex
+       (throw (ex-info "Unbinding failed"
+                       {:url url
+                        :socket socket}
+                       ex))))))
 
 (s/defn bound-socket! :- ZMQ$Socket
   "Return a new socket bound to the specified address"
@@ -329,7 +351,7 @@ It totally falls apart when I'm just trying to send a string."
     (send-partial! socket m))
   (send! socket ""))
 
-(defn proxy
+(defn proxy_
   "Reads from f-in as long as there are messages available,
 forwarding to f-out.
 
@@ -344,7 +366,10 @@ don't seem to lend themselves well to the Seq abstraction...though
 that's really exactly what they're doing.
 
 Q: Why couldn't I handle these messages that way instead? i.e. with
-something like (dorun (map ...))"
+something like (dorun (map ...))
+
+TODO: Come up with a better name that doesn't conflict
+with core clojure functionality"
   [f-in f-out]
   (loop [msg (f-in)]
     (when msg
@@ -510,6 +535,27 @@ Then again, it's fairly lispy...callers can always rediret STDOUT."
       (identify! socket (str (.nextLong rdn) "-" (.nextLong rdn) n))))
   ([#^ZMQ$Socket socket]
      (set-id! socket 0)))
+
+(defn string->bytes
+  "Converts a string into a java array of bytes
+
+Because almost all of these functions really work
+on the latter, but it's much easier for humans to
+work on the former.
+
+It really seems like this should be a built-in.
+
+Then again, I found this in the clojuredocs
+examples for bytes, so that's pretty close"
+  [s]
+  (->> s
+      (map (comp byte int))
+      byte-array))
+
+(defn bytes->string
+  "Converts a java array of bytes into a string"
+  [bs]
+  (String. bs))
 
 (defn -main [ & args]
   "This is a library for you to use...if you can figure out how to install it."

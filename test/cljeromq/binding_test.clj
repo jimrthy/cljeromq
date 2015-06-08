@@ -1,9 +1,9 @@
-(ns jzmq-check.core-test
+(ns cljeromq.binding-test
   (:import [org.zeromq ZMQ
             ZMQException
             ZCurveKeyPair])
   (:require [clojure.test :refer :all]
-            [jzmq-check.core :refer :all]))
+            [cljeromq.core :refer :all]))
 
 (deftest req-rep-inproc-unencrypted-handshake
   (testing "Basic inproc req/rep handshake test"
@@ -26,7 +26,7 @@
                       (.send rep "kthxbye")
                       (is (= @client "kthxbye")))
                     (finally
-                      (.disconnect rep)))
+                      (.disconnect rep uri)))
                   (finally
                     (.close rep))))
               (finally
@@ -171,10 +171,13 @@
   (let [client-keys (ZCurveKeyPair/Factory)
         server-keys (ZCurveKeyPair/Factory)
         ctx (ZMQ/context 1)
-        in (.socket ctx ZMQ/DEALER)]
+        in (.socket ctx ZMQ/DEALER)
+        id-string "basic router/dealer encryption check"
+        id-byte-array (byte-array (map (comp byte int) id-string))
+        id-bytes (bytes id-byte-array)]
     (println "Encrypted router-dealer inproc test")
     (.makeIntoCurveClient in client-keys (.privateKey server-keys))
-    (.setIdentity in "basic router/dealer encryption check")
+    (.setIdentity in id-byte-array)
     (.bind in "inproc://reqrep")
 
     (let [out (.socket ctx ZMQ/ROUTER)]
@@ -209,9 +212,10 @@
               (println "Error sending Reply: " success)
               (is false)))
           (println "Inproc dealer waiting on encrypted response from router")
-          (let [_ (.recv in 0)
-                response (.recv in 0)]
-            (is (= (String. rep) (String. response))))))))
+          (comment (let [_ (.recv in 0)
+                         response (.recv in 0)]
+                     (is (= (String. rep) (String. response)))))
+          (is false "Uncomment that form and get it to work")))))
   (println "Dealer<->Router CURVE checked"))
 
 (deftest test-encrypted-router-dealer-over-tcp
@@ -236,23 +240,24 @@
               (println "Sending request returned:" success)
               (is false)))
           (println "Waiting for encrypted message from dealer to arrive at router over TCP")
-          (let [response (.recv out 0)]
-            (println "Router received REQ")
-            (let [s-req (String. req)
-                  s-res (String. response)]
-              (when-not (= s-req s-res)
-                (println "Sent '" s-req "' which consists of " (count req) " bytes\n"
-                         "Received '" s-res "' which is " (count response) " bytes long")
-                (is (= s-req s-res)))))
+          (comment (let [response (.recv out 0)]
+                     (println "Router received REQ")
+                     (let [s-req (String. req)
+                           s-res (String. response)]
+                       (when-not (= s-req s-res)
+                         (println "Sent '" s-req "' which consists of " (count req) " bytes\n"
+                                  "Received '" s-res "' which is " (count response) " bytes long")
+                         (is (= s-req s-res)))))
 
-          (let [success (.send out (String. rep))]
-            (when-not success
-              (println "Error sending Reply: " success)
-              (is false)))
-          (println "Dealer waiting for encrypted ACK from Router over TCP")
-          (let [response (.recv in 0)]
-            (is (= (String. rep) (String. response))))
-          (println "Encrypted Dealer->Router over TCP complete"))))))
+                   (let [success (.send out (String. rep))]
+                     (when-not success
+                       (println "Error sending Reply: " success)
+                       (is false)))
+                   (println "Dealer waiting for encrypted ACK from Router over TCP")
+                   (let [response (.recv in 0)]
+                     (is (= (String. rep) (String. response))))
+                   (println "Encrypted Dealer->Router over TCP complete"))
+          (is false "Get the rest of the test passing"))))))
 
 (deftest test-unencrypted-router-dealer-over-tcp
   "Translated directly from the jzmq unit test"
@@ -398,8 +403,8 @@
                                 (try
                                   (.connect client url)
                                   (try
-                                    (let [server-thread 
-                                          (future 
+                                    (let [server-thread
+                                          (future
                                             (println "Server: Waiting on encrypted message from dealer")
                                             (let [greet (.recv server)]  ;; TODO: Add a timeout so we don't block everything
                                               (is (= "OLEH" (String. greet)))
