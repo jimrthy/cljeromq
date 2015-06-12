@@ -292,7 +292,15 @@ Returns the port number"
                   (class message)))
 
 (defmethod send! bytes
+  ;; This probably isn't very useful.
+  ;; Especially since bytes is actually a function
+  ;; for converting a sequence into a primitive byte
+  ;; array
   ([^ZMQ$Socket socket ^bytes message flags]
+   ;; Of course, if we ever do get here somehow, this needs to
+   ;; be reconsidered.
+   (throw (ex-info "Pretty sure we can't ever possibly get here"
+                   {:problem :obsolete}))
    (when-not (.send socket message 0 flags)
      (comment (let [err-code (errno)
                     msg
@@ -312,15 +320,22 @@ Returns the port number"
 (defmethod send! String
   ([^ZMQ$Socket socket ^String message flags]
      ;; FIXME: Debug only
-     (comment (println "Sending string:\n" message))
-     (send! socket (.getBytes message) (K/flags->const flags)))
+     (comment) (println "Sending string:\n" message)
+     ;; My original plan was that this would convert the string
+     ;; to clojure.core$bytes, so it would call the method above
+     (send! socket (.getBytes message) flags))
   ([^ZMQ$Socket socket ^String message]
      (io! (send! socket message :dont-wait))))
 
+(defmethod send! byte-array-class
+  ([^ZMQ$Socket socket message flags]
+   (.send socket message (K/flags->const flags))))
+
 (defmethod send! :default
   ([^ZMQ$Socket socket message flags]
-   (comment (println "Default Send trying to transmit:\n" message "\n(a"
-                     (class message) ")"))
+   (comment)
+   (println "Default Send trying to transmit:\n" message "\n(a"
+            (class message) ")")
    ;; For now, assume that we'll only be transmitting something
    ;; that can be printed out in a form that can be read back in
    ;; using eval.
