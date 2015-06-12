@@ -10,6 +10,7 @@
                  [prismatic/schema "0.4.3"]]
   ;; Because java isn't bright enough to find this without help.
   :jvm-opts [~(str "-Djava.library.path=/usr/local/lib:" (System/getenv "LD_LIBRARY_PATH"))]
+  ;; TODO: Ditch midje
   :plugins [[lein-midje "3.0.0"]]
   :profiles {:dev {:dependencies [[midje "1.6.3"]
                                   [org.clojure/tools.namespace "0.2.10"]

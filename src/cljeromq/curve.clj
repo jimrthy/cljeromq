@@ -3,8 +3,7 @@
             [cljeromq.constants :as K]
             [cljeromq.core :as cljeromq]
             [schema.core :as s])
-  (:import [org.zeromq ZCurveKeyPair ZMQ$Context ZMQ$Socket])
-  (:gen-class))
+  (:import [org.zeromq ZCurveKeyPair ZMQ$Context ZMQ$Socket]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Schema
