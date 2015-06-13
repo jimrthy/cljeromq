@@ -188,7 +188,7 @@
         (let [req (.getBytes (str "request" n))
               rep (.getBytes (str "reply" n))]
           (comment (println n))
-          (let [_ (.sendMore in "")
+          (let [_ (.sendMore in (byte-array 0))
                 success (.send in req 0)]
             (when-not success
               (println "Sending request returned:" success)
@@ -206,7 +206,7 @@
             (is (= s-req s-rsp))
 
             (comment) (.sendMore out (String. id)))
-          (let [_ (.send out "")
+          (let [_ (.sendMore out "")
                 success (.send out (String. rep))]
             (when-not success
               (println "Error sending Reply: " success)

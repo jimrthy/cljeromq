@@ -68,17 +68,6 @@ to make swapping back and forth seamless."
   [#^ZMQ$Socket sock]
   (.hasReceiveMore sock))
 
-(s/defn raw-recv!  ; Returns byte array
-  ([socket :- ZMQ$Socket
-    flags :- K/keyword-or-seq]
-     (println "Top of raw-recv")
-     (let [flags (K/flags->const flags)]
-       (println "Receiving from socket (flags:" flags ")")
-       (.recv socket flags)))
-  ([socket :- ZMQ$Socket]
-     (println "Parameterless raw-recv")
-     (raw-recv! socket :wait)))
-
 (defn bit-array->string [bs]
   ;; Credit:
   ;; http://stackoverflow.com/a/7181711/114334
@@ -286,6 +275,7 @@ Returns the port number"
    ;; Q: This *does* unsubscribe from everything, doesn't it?
    (unsubscribe! socket "")))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Send
 
 (defmulti send! (fn [^ZMQ$Socket socket message & flags]
@@ -329,7 +319,12 @@ Returns the port number"
 
 (defmethod send! byte-array-class
   ([^ZMQ$Socket socket message flags]
-   (.send socket message (K/flags->const flags))))
+   ;; Java parameters:
+   ;; java byte array message
+   ;; offset - where the message starts in that array?
+   ;; number of bytes to send
+   ;; flags
+   (.send socket message 0 (count message) (K/flags->const flags))))
 
 (defmethod send! :default
   ([^ZMQ$Socket socket message flags]
@@ -366,6 +361,9 @@ It totally falls apart when I'm just trying to send a string."
     (send-partial! socket m))
   (send! socket ""))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Questionable Helpers
+
 (defn proxy_
   "Reads from f-in as long as there are messages available,
 forwarding to f-out.
@@ -394,6 +392,20 @@ with core clojure functionality"
 (s/defn identify!
   [socket :- ZMQ$Socket name :- s/Str]
   (io! (.setIdentity socket (.getBytes name))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Receive
+
+(s/defn raw-recv!  ; Returns byte array
+  ([socket :- ZMQ$Socket
+    flags :- K/keyword-or-seq]
+     (println "Top of raw-recv")
+     (let [flags (K/flags->const flags)]
+       (println "Receiving from socket (flags:" flags ")")
+       (.recv socket flags)))
+  ([socket :- ZMQ$Socket]
+     (println "Parameterless raw-recv")
+     (raw-recv! socket :wait)))
 
 (defn recv!
   "For receiving non-binary messages.
