@@ -43,6 +43,10 @@ to make swapping back and forth seamless."
 (def Context ZMQ$Context)
 (def Poller ZMQ$Poller)
 (def Socket ZMQ$Socket)
+(def InternalPair
+  "I don't like these names. But I really have to pick something arbitrary"
+  {:lhs Socket
+   :rhs Socket})
 
 (def byte-array-class (Class/forName "[B"))
 
@@ -67,11 +71,6 @@ to make swapping back and forth seamless."
 (defn has-more?
   [#^ZMQ$Socket sock]
   (.hasReceiveMore sock))
-
-(defn bit-array->string [bs]
-  ;; Credit:
-  ;; http://stackoverflow.com/a/7181711/114334
-  (apply str (map #(char (bit-and % 255)) bs)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Public
@@ -269,11 +268,24 @@ Returns the port number"
      (subscribe! socket "")))
 
 (s/defn unsubscribe!
-  ([socket :- ZMQ$Socket topic :- s/Str]
+  ([socket :- Socket topic :- s/Str]
    (io! (.unsubscribe socket (.getBytes topic))))
-  ([socket :- ZMQ$Socket]
+  ([socket :- Socket]
    ;; Q: This *does* unsubscribe from everything, doesn't it?
    (unsubscribe! socket "")))
+
+(s/defn build-internal-pair! :- InternalPair
+  [ctx :- Context]
+  (io! (let [url (str "inproc://" (gensym))]
+         {:lhs (connected-socket! ctx :pair url)
+          :rhs (bound-socket! ctx :pair url)})))
+
+(s/defn close-internal-pair!
+  [pair :- InternalPair]
+  ;; Q: Is there any point to setting linger to 0?
+  (disconnect! (:lhs pair))
+  (close! (:lhs pair))
+  (close! (:rhs pair)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Send
@@ -484,7 +496,11 @@ That's how this is really meant to be used, if you can trust your peers."
      (when-let [s (recv-str! socket flags)]
        (edn/read-string s))))
 
-(s/defn poller :- ZMQ$Poller
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Polling
+;;; TODO: this part needs some TLC
+
+(s/defn poller :- Poller
   "Return a new Poller instance.
 Callers probably shouldn't be using something this low-level.
 Except when they need to.
@@ -502,18 +518,18 @@ Aside from the fact that it seems like it'd be better to return a
 lazy seq of available sockets.
 For that matter, it seems like it would be better to just implement
 ISeq and return the next message as it becomes ready."
-  ([poller :- ZMQ$Poller]
+  ([poller :- Poller]
      (.poll poller))
-  ([poller timeout]
+  ([poller :- Poller timeout :- s/Int]
      (.poll poller timeout)))
 
-(defn register-socket-in-poller!
+(s/defn register-socket-in-poller!
   "Register a socket to poll on."
-  [#^ZMQ$Socket socket #^ZMQ$Poller poller]
+  [socket :- Socket poller :- Poller]
   (io! (.register poller socket :poll-in)))
 
-(defn unregister-socket-in-poller!
-  [#^ZMQ$Socket socket #^ZMQ$Poller poller]
+(s/defn unregister-socket-in-poller!
+  [socket :- Socket poller :- Poller]
   (io! (.unregister poller socket)))
 
 (defmacro with-poller [[poller-name context socket] & body]
@@ -537,27 +553,44 @@ dealing with multiple sockets"
 (s/defn socket-poller-in!
   "Attach a new poller to a seq of sockets.
 Honestly, should be smarter and just let me poll on a single socket."
-  [sockets :- [ZMQ$Socket]]
+  [sockets :- [Socket]]
   (let [checker (poller (count sockets))]
     (doseq [s sockets]
       (register-socket-in-poller! s checker))
     checker))
 
-(defn dump!
+(s/defn in-available? :- s/Bool
+  "Did the last poll trigger poller's POLLIN flag on socket n?
+
+Yes, this is the low-level interface aspect that I want to hide.
+There are err and out versions that do the same thing.
+
+Currently, I only need this one."
+  [poller :- Poller
+   n :- s/Int]
+  (.pollin poller n))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Helpers of dubious value
+;;; TODO: Move these elsewhere
+
+(s/defn dump! :- s/Str
   "Cheeseball first draft at just logging incoming messages.
 This approach is pretty awful...at the very least it should build
 a string and return that.
 Then again, it's fairly lispy...callers can always rediret STDOUT."
-  [#^ZMQ$Socket socket]
-  (println (->> "-" repeat (take 38) (apply str)))
-  (doseq [msg (recv-all! socket 0)]
+  [socket :- Socket]
+  (with-out-str
+    (println (->> "-" repeat (take 38) (apply str)))
+    (doseq [msg (recv-all! socket 0)]
     (print (format "[%03d] " (count msg)))
     (if (and (= 17 (count msg)) (= 0 (first msg)))
       (println (format "UUID %s" (-> msg ByteBuffer/wrap .getLong)))
-      (println (-> msg String. .trim)))))
+      (println (-> msg String. .trim))))))
 
-(defn set-id!
-  ([#^ZMQ$Socket socket #^long n]
+(s/defn set-id!
+  ([socket :- Socket
+    n :- s/Int]
     (let [rdn (Random. (System/currentTimeMillis))]
       (identify! socket (str (.nextLong rdn) "-" (.nextLong rdn) n))))
   ([#^ZMQ$Socket socket]
@@ -584,6 +617,12 @@ examples for bytes, so that's pretty close"
   [bs]
   (String. bs))
 
-(defn -main [ & args]
+(defn bit-array->string [bs]
+  ;; Credit:
+  ;; http://stackoverflow.com/a/7181711/114334
+  (apply str (map #(char (bit-and % 255)) bs)))
+
+(defn -main
   "This is a library for you to use...if you can figure out how to install it."
+  [ & args]
   "Were you really expecting this to do something?")
