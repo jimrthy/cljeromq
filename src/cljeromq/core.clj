@@ -46,7 +46,8 @@ to make swapping back and forth seamless."
 (def InternalPair
   "I don't like these names. But I really have to pick something arbitrary"
   {:lhs Socket
-   :rhs Socket})
+   :rhs Socket
+   :url s/Str})
 
 (def byte-array-class (Class/forName "[B"))
 
@@ -278,12 +279,13 @@ Returns the port number"
   [ctx :- Context]
   (io! (let [url (str "inproc://" (gensym))]
          {:lhs (connected-socket! ctx :pair url)
-          :rhs (bound-socket! ctx :pair url)})))
+          :rhs (bound-socket! ctx :pair url)
+          :url url})))
 
 (s/defn close-internal-pair!
   [pair :- InternalPair]
   ;; Q: Is there any point to setting linger to 0?
-  (disconnect! (:lhs pair))
+  (disconnect! (:lhs pair) (:url pair))
   (close! (:lhs pair))
   (close! (:rhs pair)))
 
@@ -411,43 +413,43 @@ with core clojure functionality"
 (s/defn raw-recv!  ; Returns byte array
   ([socket :- ZMQ$Socket
     flags :- K/keyword-or-seq]
-     (println "Top of raw-recv")
-     (let [flags (K/flags->const flags)]
-       (println "Receiving from socket (flags:" flags ")")
-       (.recv socket flags)))
+   (comment (println "Top of raw-recv"))
+   (let [flags (K/flags->const flags)]
+     (comment (println "Receiving from socket (flags:" flags ")"))
+     (.recv socket flags)))
   ([socket :- ZMQ$Socket]
-     (println "Parameterless raw-recv")
-     (raw-recv! socket :wait)))
+   (comment (println "Parameterless raw-recv"))
+   (raw-recv! socket :wait)))
 
 (defn recv!
   "For receiving non-binary messages.
 Strings are the most obvious alternative.
 More importantly (probably) is EDN."
   ([^ZMQ$Socket socket flags]
-     (println "\tListening. Flags: " flags)
-     (io!
-      (let [^bytes binary (raw-recv! socket flags)]
-        ;; This should be a ByteBuffer now
-        (println "\tRaw:\n" binary)
-        (let
-            [s (String. binary)]
-          (println "Received:\n" s)
-          (if (and (has-more? socket)
-                   (= s (-> K/const :flag :edn)))
-            (do
-              (println "Should be more pieces on the way")
-              (let [actual-binary (raw-recv! socket :dont-wait)
-                    actual-content (String. actual-binary)]
-                (println "Actual message:\n" actual-content)
-                ;; FIXME: Really should loop and build up a sequence.
-                ;; Absolutely nothing says this will be transmitted one
-                ;; form at a time.
-                ;; Well, except that doing that is purposefully
-                ;; difficult.
-                (edn/read-string actual-content)))
-            s)))))
+   (comment (println "\tListening. Flags: " flags))
+   (io!
+    (let [^bytes binary (raw-recv! socket flags)]
+      ;; This should be a ByteBuffer now
+      (println "\tRaw:\n" binary)
+      (let
+          [s (String. binary)]
+        (println "Received:\n" s)
+        (if (and (has-more? socket)
+                 (= s (-> K/const :flag :edn)))
+          (do
+            (println "Should be more pieces on the way")
+            (let [actual-binary (raw-recv! socket :dont-wait)
+                  actual-content (String. actual-binary)]
+              (println "Actual message:\n" actual-content)
+              ;; FIXME: Really should loop and build up a sequence.
+              ;; Absolutely nothing says this will be transmitted one
+              ;; form at a time.
+              ;; Well, except that doing that is purposefully
+              ;; difficult.
+              (edn/read-string actual-content)))
+          s)))))
   ([#^ZMQ$Socket socket]
-     (recv! socket :wait)))
+   (recv! socket :wait)))
 
 (s/defn recv-all!
   "Receive all available message parts.
@@ -506,7 +508,7 @@ Callers probably shouldn't be using something this low-level.
 Except when they need to.
 There doesn't seem any good reason to put effort into hiding it."
   [socket-count :- s/Int]
-  (^ZMQ$Poller. socket-count))
+  (ZMQ$Poller. socket-count))
 
 (s/defn poll :- s/Int
   "Returns the number of sockets available in the poller
@@ -525,11 +527,13 @@ ISeq and return the next message as it becomes ready."
 
 (s/defn register-socket-in-poller!
   "Register a socket to poll on."
-  [socket :- Socket poller :- Poller]
-  (io! (.register poller socket :poll-in)))
+  [poller :- Poller
+   socket :- Socket]
+  (io! (.register poller socket (K/poll-opts :poll-in))))
 
 (s/defn unregister-socket-in-poller!
-  [socket :- Socket poller :- Poller]
+  [poller :- Poller
+   socket :- Socket]
   (io! (.unregister poller socket)))
 
 (defmacro with-poller [[poller-name context socket] & body]
@@ -544,11 +548,11 @@ dealing with multiple sockets"
      ;; almost definitely a symbol.
      ;; That same is true of socket, isn't it?
      ;; TODO: Ask Steven
-     (cljeromq.core/register-socket-in-poller! ~poller-name ~socket :poll-in :poll-err)
+     (cljeromq.core/register-socket-in-poller!  ~socket ~poller-name :poll-in :poll-err)
      (try
        ~@body
        (finally
-         (cljeromq.core/unregister-socket-in-poller! ~poller-name ~socket)))))
+         (cljeromq.core/unregister-socket-in-poller! ~socket ~poller-name)))))
 
 (s/defn socket-poller-in!
   "Attach a new poller to a seq of sockets.

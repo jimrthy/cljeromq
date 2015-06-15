@@ -2,7 +2,7 @@
   (:require [schema.core :as s])
   ;; This dependency's annoying, but the alternative
   ;; is to just copy/paste its named constants.
-  (:import [org.zeromq ZMQ]))
+  (:import [org.zeromq ZMQ ZMQ$Poller]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Schema
@@ -45,6 +45,10 @@ Although, really, that's almost pedantic."
            :not-socket 156384721
            :not-supported 156384713
            :terminated 156384765}
+
+   :polling {:poll-in  ZMQ$Poller/POLLIN
+             :poll-out ZMQ$Poller/POLLOUT
+             :poll-err ZMQ$Poller/POLLERR}
 
    ;; TODO: Access these via iroh?
    :socket-options {:curve-server 47   ; ZMQ/CURVE_SERVER  ; 1 for yes, 0 for no
@@ -129,6 +133,18 @@ socket options."
   "Convert a keyword naming a socket option to a ZMQ constant"
   [key]
   (-> :socket-options const key))
+
+(defn poll-opts
+  [korks]
+  (if (keyword? korks)
+    (-> const :polling korks)
+    (let [current (first korks)
+          base (poll-opts current)
+          remainder (next korks)]
+      (if remainder
+        (bit-or base
+            (poll-opts (rest korks)))
+        base))))
 
 (s/defn version :- {:major s/Int
                     :minor s/Int
