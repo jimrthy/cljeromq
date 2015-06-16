@@ -332,12 +332,15 @@ Returns the port number"
      (io! (send! socket message :dont-wait))))
 
 (defmethod send! byte-array-class
+  ([^ZMQ$Socket socket message]
+   (send! socket message :dont-wait))
   ([^ZMQ$Socket socket message flags]
    ;; Java parameters:
    ;; java byte array message
    ;; offset - where the message starts in that array?
    ;; number of bytes to send
    ;; flags
+   (println "Sending a byte array")
    (.send socket message 0 (count message) (K/flags->const flags))))
 
 (defmethod send! :default
