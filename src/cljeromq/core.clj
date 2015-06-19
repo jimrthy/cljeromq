@@ -99,7 +99,7 @@ terminate! on it just before it exits."
   "Stop a messaging context.
 If you have outgoing sockets with a linger value (which is the default), this will block until
 those messages are received."
-  [ctx :- ZMQ$Context]
+  [ctx :- Context]
   (io!
    (.term ctx)))
 
@@ -278,8 +278,13 @@ Returns the port number"
 (s/defn build-internal-pair! :- InternalPair
   [ctx :- Context]
   (io! (let [url (str "inproc://" (gensym))]
-         {:lhs (connected-socket! ctx :pair url)
-          :rhs (bound-socket! ctx :pair url)
+         ;; Note that, according to the docs,
+         ;; binding must happen first (although
+         ;; it doesn't seem to matter in practice)
+         ;; As of 2012, this was a long-standing bug.
+         {:rhs (bound-socket! ctx :pair url)
+          ;; TODO: Verify that connect succeeded!
+          :lhs (connected-socket! ctx :pair url)
           :url url})))
 
 (s/defn close-internal-pair!
@@ -324,7 +329,7 @@ Returns the port number"
 (defmethod send! String
   ([^ZMQ$Socket socket ^String message flags]
      ;; FIXME: Debug only
-     (comment) (println "Sending string:\n" message)
+     (comment (println "Sending string:\n" message))
      ;; My original plan was that this would convert the string
      ;; to clojure.core$bytes, so it would call the method above
      (send! socket (.getBytes message) flags))
@@ -340,7 +345,7 @@ Returns the port number"
    ;; offset - where the message starts in that array?
    ;; number of bytes to send
    ;; flags
-   (println "Sending a byte array")
+   (comment (println "Sending a byte array"))
    (.send socket message 0 (count message) (K/flags->const flags))))
 
 (defmethod send! :default
@@ -431,19 +436,19 @@ More importantly (probably) is EDN."
   ([^ZMQ$Socket socket flags]
    (comment (println "\tListening. Flags: " flags))
    (io!
-    (let [^bytes binary (raw-recv! socket flags)]
+    (when-let [^bytes binary (raw-recv! socket flags)]
       ;; This should be a ByteBuffer now
-      (println "\tRaw:\n" binary)
+      (comment (println "\tRaw:\n" binary))
       (let
           [s (String. binary)]
-        (println "Received:\n" s)
+        (comment (println "Received:\n" s))
         (if (and (has-more? socket)
                  (= s (-> K/const :flag :edn)))
           (do
-            (println "Should be more pieces on the way")
+            (comment (println "Should be more pieces on the way"))
             (let [actual-binary (raw-recv! socket :dont-wait)
                   actual-content (String. actual-binary)]
-              (println "Actual message:\n" actual-content)
+              (comment (println "Actual message:\n" actual-content))
               ;; FIXME: Really should loop and build up a sequence.
               ;; Absolutely nothing says this will be transmitted one
               ;; form at a time.
