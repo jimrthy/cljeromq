@@ -1,22 +1,19 @@
-(defproject org.clojars.jimrthy/cljeromq "0.1.0-SNAPSHOT"
+(defproject com.jimrthy/cljeromq "0.1.0-SNAPSHOT"
   :description "Clojure language wrapper on top of the JNI layer over 0MQ"
   :url "https://github.com/jimrthy/cljeromq"
+  ;; TODO: Can I switch this to EPL?
   :license {:name "Lesser General Public License"
             :url "http://www.gnu.org/licenses/lgpl.html"}
-  :dependencies [[byte-transforms "0.1.0"]
-                 [com.taoensso/timbre "2.6.2"]
-                 [org.clojure/clojure "1.5.1"]
-                 ;; Switching to jeromq for now, at least until
-                 ;; zeromq 4 is released.
-                 ;; FIXME: That's out now. Use it!!
-                 ;;[org.zeromq/jzmq "2.2.0"]
-                 [org.jeromq/jeromq "0.3.0-SNAPSHOT"]
-                 [org.zeromq/cljzmq "0.1.1" :exclusions [org.zeromq/jzmq]]]
+  :dependencies [[org.clojure/clojure "1.6.0"]
+                 [org.zeromq/jzmq "3.1.1-SNAPSHOT"]
+                 [im.chit/ribol "0.4.0"]  ; Because I need *something* to make C-style error handling palatable
+                 [prismatic/schema "0.4.3"]]
+  ;; Because java isn't bright enough to find this without help.
+  :jvm-opts [~(str "-Djava.library.path=/usr/local/lib:" (System/getenv "LD_LIBRARY_PATH"))]
+  ;; TODO: Ditch midje
   :plugins [[lein-midje "3.0.0"]]
-  :profiles {:dev {:dependencies [[midje "1.5.1"]]}}
-  ;; TODO: Want to set *warn-on-reflection* to true, at least for unit tests.
-  ;; Probably also for general dev.
-  :repl-options {:init-ns cljeromq.core}
-  :repositories {;"sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"
-                 "sonatype-nexus-snapshots" "https://oss.sonatype.org/content/repositories/snapshots"
-                 })
+  :profiles {:dev {:dependencies [[midje "1.6.3"]
+                                  [org.clojure/tools.namespace "0.2.10"]
+                                  [org.clojure/java.classpath "0.2.2"]]
+                   :source-paths ["dev"]}}
+  :repl-options {:init-ns user})
