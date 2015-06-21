@@ -10,4 +10,4 @@
 #    -Dversion=0.1.0-SNAPSHOT -Dpackaging=jar \
 #    -Dfile=target/cljeromq-0.1.0-SNAPSHOT-standalone.jar -Durl=file:/home/james/repo
 
-lein localrepo install target/cljeromq-0.1.0-SNAPSHOT-standalone.jar /jimrthy/cljeromq 0.1.0-SNAPSHOT
+lein localrepo install target/cljeromq-0.1.0-SNAPSHOT.jar /jimrthy/cljeromq 0.1.0-SNAPSHOT
