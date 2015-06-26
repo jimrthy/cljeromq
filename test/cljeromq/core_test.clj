@@ -180,3 +180,10 @@
         round-tripped (core/bytes->string bs)]
     (is (= round-tripped s) "Conversion failed")
     (is (= (class bs) core/byte-array-class))))
+
+(deftest url-basics []
+  (let [url {:protocol :tcp
+             :address [0 0 0 0]
+             :port 7681}]
+    (is (= "tcp://0.0.0.0:7681"
+           (core/connection-string url)))))

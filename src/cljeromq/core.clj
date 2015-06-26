@@ -25,8 +25,9 @@ to make swapping back and forth seamless."
             [clojure.edn :as edn]
             [ribol.core :refer (raise)]
             [schema.core :as s])
-  (:import [java.util Random]
+  (:import [java.net InetAddress]
            [java.nio ByteBuffer]
+           [java.util Random]
            [org.zeromq
             ZMQ
             ZMQException
@@ -50,6 +51,21 @@ to make swapping back and forth seamless."
    :url s/Str})
 
 (def byte-array-class (Class/forName "[B"))
+
+(def zmq-protocol
+  ;; TODO: Look up the rest
+  (s/enum :tcp :inproc))
+
+(def zmq-address (s/either
+                  [s/Int]  ; 4 bytes
+                  s/Str  ; hostname
+                  ; ??? for IPv6
+                  ))
+
+(def zmq-url {:protocol zmq-protocol
+              :address zmq-address
+              ;; TODO: Actually, this is a short
+              :port s/Int})
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Helpers
@@ -585,6 +601,18 @@ Currently, I only need this one."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Helpers of dubious value
 ;;; TODO: Move these elsewhere
+
+(s/defn ^:always-validate connection-string :- s/Str
+  [url :- zmq-url]
+  (let [base-address (:address url)
+        address (if (number? (first base-address))
+                  (InetAddress/getByAddress (byte-array base-address))
+                  (InetAddress/getByName base-address))]
+    (str (name (:protocol zmq-url)
+             "://"
+             (.getHostAddress address)
+             ":"
+             (:port url)))))
 
 (s/defn dump! :- s/Str
   "Cheeseball first draft at just logging incoming messages.
