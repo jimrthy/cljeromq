@@ -92,7 +92,7 @@ to make swapping back and forth seamless."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Public
 
-(s/defn context :- ZMQ$Context
+(s/defn context :- Context
   "Create a messaging contexts.
 threads is the number of threads to use. Should never be larger than (dec cpu-count).
 
@@ -103,7 +103,9 @@ Contexts are designed to be thread safe.
 
 There are very few instances where it makes sense to
 do anything more complicated than creating the context when your app starts and then calling
-terminate! on it just before it exits."
+terminate! on it just before it exits.
+
+Q: Why didn't I name this context! ?"
   ([thread-count :- s/Int]
      (io! (ZMQ/context thread-count)))
   ([]
@@ -127,7 +129,7 @@ Seems like a great idea in theory, but doesn't seem all that useful in practice"
      (try ~@body
           (finally (terminate! ~id)))))
 
-(s/defn socket! :- ZMQ$Socket
+(s/defn socket! :- Socket
   "Create a new socket.
 TODO: the type really needs to be an enum of keywords"
   [ctx :- ZMQ$Context type :- s/Keyword]
@@ -135,7 +137,7 @@ TODO: the type really needs to be an enum of keywords"
     (io! (.socket ctx real-type))))
 
 (s/defn set-linger!
-  [s :- ZMQ$Socket
+  [s :- Socket
    n :- s/Int]
   (io!
    (.setLinger s n)))
@@ -144,15 +146,15 @@ TODO: the type really needs to be an enum of keywords"
   "This is hugely important
 
 Desperately needs documentation"
-  ([s :- ZMQ$Socket]
+  ([s :- Socket]
    (set-router-mandatory! s true))
-  ([s :- ZMQ$Socket
+  ([s :- Socket
     on :- s/Bool]
    (.setRouterMandatory s on)))
 
 (s/defn close!
   "You're done with a socket."
-  [s :- ZMQ$Socket]
+  [s :- Socket]
   ;; Q: Is it more appropriate to wrap both in io!
   ;; or let set-linger's io! speak for itself?
   ;; Maybe I should just be wrapping up the .close
@@ -249,11 +251,13 @@ Returns the port number"
          ~body))))
 
 (s/defn connect!
-  [socket :- ZMQ$Socket url :- s/Str]
+  [socket :- Socket
+   url :- s/Str]
   (io! (.connect socket url)))
 
 (s/defn disconnect!
-  [socket :- ZMQ$Socket url :- s/Str]
+  [socket :- Socket
+   url :- s/Str]
   (io! (.disconnect socket url)))
 
 (defmacro with-connected-socket!
@@ -269,7 +273,7 @@ Returns the port number"
 
 (s/defn connected-socket!
   "Returns a new socket connected to the specified URL"
-  [ctx :- ZMQ$Context
+  [ctx :- Context
    type :- s/Keyword
    url :- s/Str]
   (let [s (socket! ctx type)]
@@ -608,11 +612,14 @@ Currently, I only need this one."
         address (if (number? (first base-address))
                   (InetAddress/getByAddress (byte-array base-address))
                   (InetAddress/getByName base-address))]
-    (str (name (:protocol zmq-url)
-             "://"
-             (.getHostAddress address)
-             ":"
-             (:port url)))))
+    ;; TODO: This approach is overly simplistic.
+    ;; It seems like it's guaranteed to break on inproc,
+    ;; as a are minimum.
+    (str (name (:protocol url))
+         "://"
+         (.getHostAddress address)
+         ":"
+         (:port url))))
 
 (s/defn dump! :- s/Str
   "Cheeseball first draft at just logging incoming messages.

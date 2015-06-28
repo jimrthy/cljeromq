@@ -1,5 +1,5 @@
 (ns dev
-  (:require #_[cljeromq.system :as system]
+  (:require [cljeromq.core :as mq]
             [clojure.java.io :as io]
             [clojure.inspector :as i]
             [clojure.string :as str]
@@ -7,7 +7,8 @@
             [clojure.repl :refer :all]
             [clojure.test :as test]
             [clojure.tools.namespace.repl :refer (refresh refresh-all)]
-            #_[com.stuartsierra.component :as component]))
+            #_[com.stuartsierra.component :as component]
+            [schema.core :as s]))
 
 (comment
   (def system nil)
