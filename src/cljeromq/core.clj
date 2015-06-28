@@ -65,7 +65,7 @@ to make swapping back and forth seamless."
 (def zmq-url {:protocol zmq-protocol
               :address zmq-address
               ;; TODO: Actually, this is a short
-              :port s/Int})
+              :port (s/maybe s/Int)})
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Helpers
@@ -615,11 +615,12 @@ Currently, I only need this one."
     ;; TODO: This approach is overly simplistic.
     ;; It seems like it's guaranteed to break on inproc,
     ;; as a are minimum.
-    (str (name (:protocol url))
-         "://"
-         (.getHostAddress address)
-         ":"
-         (:port url))))
+    (let [base (str (name (:protocol url))
+                    "://"
+                    (.getHostAddress address))]
+      (if-let [port (:port url)]
+        (str base ":" port)
+        base))))
 
 (s/defn dump! :- s/Str
   "Cheeseball first draft at just logging incoming messages.
