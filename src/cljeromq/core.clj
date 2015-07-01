@@ -52,20 +52,29 @@ to make swapping back and forth seamless."
 
 (def byte-array-class (Class/forName "[B"))
 
+(def socket-types (s/enum :req :rep
+                          :pub :sub
+                          :x-pub :x-sub
+                          :push :pull
+                          :router :dealer
+                          :xreq :xrep  ; obsolete names for router/dealer
+                          :pair))
+
 (def zmq-protocol
   ;; TODO: Look up the rest
   (s/enum :tcp :inproc))
 
 (def zmq-address (s/either
                   [s/Int]  ; 4 bytes
-                  s/Str  ; hostname
-                  ; ??? for IPv6
+                  ;; hostname
+                  s/Str
+                  ;; ??? for IPv6
                   ))
 
 (def zmq-url {:protocol zmq-protocol
               :address zmq-address
               ;; TODO: Actually, this is a short
-              :port (s/maybe s/Int)})
+              (s/optional-key :port) s/Int})
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Helpers
@@ -129,10 +138,10 @@ Seems like a great idea in theory, but doesn't seem all that useful in practice"
      (try ~@body
           (finally (terminate! ~id)))))
 
-(s/defn socket! :- Socket
+(s/defn ^:always-validate socket! :- Socket
   "Create a new socket.
 TODO: the type really needs to be an enum of keywords"
-  [ctx :- ZMQ$Context type :- s/Keyword]
+  [ctx :- ZMQ$Context type :- socket-types]
   (let [^Integer real-type (K/sock->const type)]
     (io! (.socket ctx real-type))))
 
