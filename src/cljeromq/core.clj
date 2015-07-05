@@ -44,6 +44,8 @@ to make swapping back and forth seamless."
 (def Context ZMQ$Context)
 (def Poller ZMQ$Poller)
 (def Socket ZMQ$Socket)
+(def zmq-exception ZMQException)
+
 (def InternalPair
   "I don't like these names. But I really have to pick something arbitrary"
   {:lhs Socket
