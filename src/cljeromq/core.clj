@@ -321,9 +321,13 @@ Returns the port number"
 (s/defn close-internal-pair!
   [pair :- InternalPair]
   ;; Q: Is there any point to setting linger to 0?
+  (println "cljeromo: Stopping an internal pair")
   (disconnect! (:lhs pair) (:url pair))
+  (println "lhs disconnected")
   (close! (:lhs pair))
-  (close! (:rhs pair)))
+  (println "lhs closed")
+  (close! (:rhs pair))
+  (println "rhs closed"))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Send
