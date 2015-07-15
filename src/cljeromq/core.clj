@@ -394,7 +394,6 @@ Returns the port number"
    ;; The messaging layer really shouldn't be responsible for
    ;; serialization at all, but it makes sense to at least start
    ;; this out here.
-   (send! socket (-> K/const :flag :edn), :send-more)
    (send! socket (pr-str message) flags))
   ([^ZMQ$Socket socket message]
    (send! socket message :dont-wait)))
