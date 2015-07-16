@@ -335,32 +335,6 @@ Returns the port number"
 (defmulti send! (fn [^ZMQ$Socket socket message & flags]
                   (class message)))
 
-(defmethod send! bytes
-  ;; This probably isn't very useful.
-  ;; Especially since bytes is actually a function
-  ;; for converting a sequence into a primitive byte
-  ;; array
-  ([^ZMQ$Socket socket ^bytes message flags]
-   ;; Of course, if we ever do get here somehow, this needs to
-   ;; be reconsidered.
-   (throw (ex-info "Pretty sure we can't ever possibly get here"
-                   {:problem :obsolete}))
-   (when-not (.send socket message 0 flags)
-     (comment (let [err-code (errno)
-                    msg
-                    (condp (= (-> K/const :error (:code %))) err-code
-                      :again "Non-blocking mode requested, but message cannot currently be sent"
-                      :not-supported "Socket cannot send"
-                      :fsm "Cannot send in current state"
-                      :terminated "Socket's Context has been terminated"
-                      :not-socket "Socket invalid"
-                      :interrupted "Interrupted by signal"
-                      :fault "Invalid message")]
-                (raise [:fail {:reason err-code :message msg}])))
-     (raise {:not-implemented "What went wrong?"})))
-  ([^ZMQ$Socket socket ^bytes message]
-     (io! (send! socket message (K/flags->const :dont-wait)))))
-
 (defmethod send! String
   ([^ZMQ$Socket socket ^String message flags]
      ;; FIXME: Debug only
@@ -373,7 +347,7 @@ Returns the port number"
 
 (defmethod send! byte-array-class
   ([^ZMQ$Socket socket message]
-   (send! socket message :dont-wait))
+   (send! socket message [:dont-wait]))
   ([^ZMQ$Socket socket message flags]
    ;; Java parameters:
    ;; java byte array message
