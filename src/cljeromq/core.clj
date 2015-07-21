@@ -362,6 +362,8 @@ Returns the port number"
    (comment)
    (println "Default Send trying to transmit:\n" message "\n(a"
             (class message) ")")
+   (when (nil? message)
+     (throw (NullPointerException. (str "Trying to send on" socket "with flags" flags))))
    ;; For now, assume that we'll only be transmitting something
    ;; that can be printed out in a form that can be read back in
    ;; using eval.
