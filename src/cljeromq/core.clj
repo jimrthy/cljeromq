@@ -38,6 +38,10 @@ to make swapping back and forth seamless."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Schema
 
+;;; TODO: Move these elsewhere.
+;;; They're slightly more generally useful than the bulk
+;;; of the actual code.
+
 ;;; really just aliases so I don't have to look at the icky
 ;;; java names everywhere
 
