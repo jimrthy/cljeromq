@@ -1,0 +1,7 @@
+2015-DEC-11
+
+Have a basically complete implementation of the 3.2 version of 0mq based on jzmq.
+
+Really have not managed to get encryption working up to this point.
+
+Try switching to zmq-jni as my baseline instead.

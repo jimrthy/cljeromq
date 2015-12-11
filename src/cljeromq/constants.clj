@@ -1,8 +1,6 @@
 (ns cljeromq.constants
   (:require [schema.core :as s])
-  ;; This dependency's annoying, but the alternative
-  ;; is to just copy/paste its named constants.
-  (:import [org.zeromq ZMQ ZMQ$Poller]))
+  (:import [org.zeromq.jni ZMQ]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Schema
@@ -16,8 +14,8 @@
   "TODO: This should be a function instead of a var.
 Although, really, that's almost pedantic."
   {:context-option {
-                    :threads 1  ; default: 1
-                    :max-sockets 2  ; default: 1024
+                    :threads IO_THREADS  ; default: 1
+                    :max-sockets ZMQ/MAX_SOCKETS  ; default: 1024
                     }
    :control {
              ;; Non-blocking send/recv
@@ -29,15 +27,12 @@ Although, really, that's almost pedantic."
              :wait 0
 
              ;; More message parts are coming
+             :rcvmore ZMQ/RCVMORE
+             :receive-more ZMQ/RCVMORE
              :sndmore ZMQ/SNDMORE
              :send-more ZMQ/SNDMORE}
 
-   :device {:forwarder ZMQ/FORWARDER  ; 2
-            :queue ZMQ/QUEUE   ; 3
-            :streamer ZMQ/STREAMER  ; 1
-            }
-
-   :error {:zero 156384712  ; random baseline magic # for 0mq-specific errors
+   :error {:zero 156384712  ; seemingly random baseline magic number for specific errors
            :again 11
            :fault 14
            :fsm 156384763
@@ -46,22 +41,22 @@ Although, really, that's almost pedantic."
            :not-supported 156384713
            :terminated 156384765}
 
-   :polling {:poll-in  ZMQ$Poller/POLLIN
-             :poll-out ZMQ$Poller/POLLOUT
-             :poll-err ZMQ$Poller/POLLERR}
+   :polling {:poll-in  ZMQ/POLLIN
+             :poll-out ZMQ/POLLOUT
+             :poll-err ZMQ/POLLERR}
 
-   ;; TODO: Access these via iroh?
-   :socket-options {:curve-server 47   ; ZMQ/CURVE_SERVER  ; 1 for yes, 0 for no
+   :socket-options {:curve-server ZMQ/CURVE_SERVER            ; 47 -- set to 1 for yes, 0 for no
                     ;; the next two are for the client
-                    :curve-public-key 48  ; ZMQ/CURVE_PUBLIC_KEY
-                    :curve-secret-key 49  ; ZMQ/CURVE_SECRET_KEY
+                    :curve-public-key ZMQ/CURVE_PUBLICKEY    ; 48
+                    :curve-secret-key ZMQ/CURVE_SECRETKEY    ; 49
                     ;; The server just needs the private key
                     ;; The client's what needs this.
-                    :curve-server-key 50  ; ZMQ/CURVE_SERVER_KEY
-                    :identity 5
-                    :receive-more 13
-                    :subscribe 6
-                    :unsubscribe 7
+                    :curve-server-key ZMQ/CURVE_SERVERKEY    ; 50
+                    :identity ZMQ/IDENTITY                    ; 5
+                    :linger ZMQ/LINGER
+                    :receive-more ZMQ/RCVMORE                 ; 13
+                    :subscribe ZMQ/SUBSCRIBE                  ; 6
+                    :unsubscribe ZMQ/UNSUBSCRIBE              ; 7
                     }
 
             ;;; Socket types
@@ -157,7 +152,12 @@ socket options."
                     :patch s/Int}
   "Return the 0mq version number as a vector"
   []
-  (let [major (ZMQ/getMajorVersion)
-        minor (ZMQ/getMinorVersion)
-        patch (ZMQ/getPatchVersion)]
-    {:major major :minor minor :patch patch}))
+  ;; No longer have these available
+  (comment (let [major (ZMQ/getMajorVersion)
+           minor (ZMQ/getMinorVersion)
+           patch (ZMQ/getPatchVersion)]
+       {:major major :minor minor :patch patch}))
+  ;; FIXME: This is obviously wrong
+  {:major (ZMQ/version)
+   :minor 0
+   :patch 0})

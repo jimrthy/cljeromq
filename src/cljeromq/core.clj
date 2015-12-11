@@ -28,12 +28,8 @@ to make swapping back and forth seamless."
   (:import [java.net InetAddress]
            [java.nio ByteBuffer]
            [java.util Random]
-           [org.zeromq
-            ZMQ
-            ZMQException
-            ZMQ$Context
-            ZMQ$Poller
-            ZMQ$Socket]))
+           [org.zeromq.jni
+            ZMQ]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Schema
@@ -45,10 +41,10 @@ to make swapping back and forth seamless."
 ;;; really just aliases so I don't have to look at the icky
 ;;; java names everywhere
 
-(def Context ZMQ$Context)
-(def Poller ZMQ$Poller)
-(def Socket ZMQ$Socket)
-(def zmq-exception ZMQException)
+(def Context long)
+#_(def Poller ZMQ$Poller)
+(def Socket long)
+#_(def zmq-exception ZMQException)
 
 (def InternalPair
   "I don't like these names. But I really have to pick something arbitrary"
@@ -100,9 +96,23 @@ to make swapping back and forth seamless."
     {:code code
      :message (.toString message)})))
 
-(defn has-more?
-  [#^ZMQ$Socket sock]
-  (.hasReceiveMore sock))
+(s/defn has-more?
+  [sock :- Socket]
+  (ZMQ/zmq_getsockopt_long sock (-> K/const :control :receive-more)))
+
+(s/defn set-socket-option
+  [s :- Socket
+   option :- s/Int
+   ;; This might be an int, long, or byte[]
+   ;; TODO: Get schema to specify that
+   value]
+  (ZMQ/zmq_setsockopt s option value))
+
+(s/defn set-context-option
+  [ctx :- Context
+   option :- s/Int
+   value :- s/Int]
+  (ZMQ/zmq_ctx_set ctx option value))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Public
@@ -122,7 +132,10 @@ terminate! on it just before it exits.
 
 Q: Why didn't I name this context! ?"
   ([thread-count :- s/Int]
-     (io! (ZMQ/context thread-count)))
+     (io!
+      (let [ctx (ZMQ/zmq_ctx_new)]
+        (set-context-option ctx (-> K/const :context-option :threads) thread-count)
+        ctx)))
   ([]
      (let [cpu-count (.availableProcessors (Runtime/getRuntime))]
        ;; Go with maximum as default
@@ -134,7 +147,7 @@ If you have outgoing sockets with a linger value (which is the default), this wi
 those messages are received."
   [ctx :- Context]
   (io!
-   (.term ctx)))
+   (ZMQ/zmq_ctx_destroy ctx)))
 
 (defmacro with-context
   "Convenience macro for situations where you can create, use, and kill the context in one place.
@@ -147,15 +160,15 @@ Seems like a great idea in theory, but doesn't seem all that useful in practice"
 (s/defn ^:always-validate socket! :- Socket
   "Create a new socket.
 TODO: the type really needs to be an enum of keywords"
-  [ctx :- ZMQ$Context type :- socket-types]
+  [ctx :- Context type :- socket-types]
   (let [^Integer real-type (K/sock->const type)]
-    (io! (.socket ctx real-type))))
+    (io! (ZMQ/zmq_socket ctx real-type))))
 
 (s/defn set-linger!
   [s :- Socket
    n :- s/Int]
   (io!
-   (.setLinger s n)))
+   (set-socket-option s (-> K/const :socket-options :linger)  n)))
 
 (s/defn set-router-mandatory!
   "This is hugely important

@@ -5,7 +5,8 @@
   :license {:name "Lesser General Public License"
             :url "http://www.gnu.org/licenses/lgpl.html"}
   :dependencies [[org.clojure/clojure "1.8.0-RC3"]
-                 [org.zeromq/jzmq "3.1.1-SNAPSHOT"]
+                 #_[org.zeromq/jzmq "3.1.1-SNAPSHOT"]
+                 [org.zeromq/zmq-jni "0.1.1-SNAPSHOT"]
                  ;; Because I need *something* to make C-style error handling palatable
                  ;; Note that this has been deprecated
                  ;; TODO: Switch to hara
