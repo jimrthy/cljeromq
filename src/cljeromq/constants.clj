@@ -13,8 +13,8 @@
 (def const
   "TODO: This should be a function instead of a var.
 Although, really, that's almost pedantic."
-  {:context-option {
-                    :threads IO_THREADS  ; default: 1
+  {:context-options {
+                    :threads ZMQ/IO_THREADS  ; default: 1
                     :max-sockets ZMQ/MAX_SOCKETS  ; default: 1024
                     }
    :control {
@@ -32,7 +32,8 @@ Although, really, that's almost pedantic."
              :sndmore ZMQ/SNDMORE
              :send-more ZMQ/SNDMORE}
 
-   :error {:zero 156384712  ; seemingly random baseline magic number for specific errors
+   :error {
+           :zero 156384712  ; seemingly random baseline magic number for specific errors
            :again 11
            :fault 14
            :fsm 156384763
@@ -55,6 +56,7 @@ Although, really, that's almost pedantic."
                     :identity ZMQ/IDENTITY                    ; 5
                     :linger ZMQ/LINGER
                     :receive-more ZMQ/RCVMORE                 ; 13
+                    :router-mandatory ZMQ/ROUTER_MANDATORY
                     :subscribe ZMQ/SUBSCRIBE                  ; 6
                     :unsubscribe ZMQ/UNSUBSCRIBE              ; 7
                     }

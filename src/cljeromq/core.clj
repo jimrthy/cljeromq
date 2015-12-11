@@ -25,10 +25,12 @@ to make swapping back and forth seamless."
             [clojure.edn :as edn]
             [ribol.core :refer (raise)]
             [schema.core :as s])
-  (:import [java.net InetAddress]
+  (:import [clojure.lang ExceptionInfo]
+           [java.net InetAddress]
            [java.nio ByteBuffer]
            [java.util Random]
            [org.zeromq.jni
+            PollItemArray
             ZMQ]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -42,9 +44,7 @@ to make swapping back and forth seamless."
 ;;; java names everywhere
 
 (def Context long)
-#_(def Poller ZMQ$Poller)
 (def Socket long)
-#_(def zmq-exception ZMQException)
 
 (def InternalPair
   "I don't like these names. But I really have to pick something arbitrary"
@@ -96,9 +96,29 @@ to make swapping back and forth seamless."
     {:code code
      :message (.toString message)})))
 
-(s/defn has-more?
-  [sock :- Socket]
-  (ZMQ/zmq_getsockopt_long sock (-> K/const :control :receive-more)))
+(s/defn add-error-detail :- ExceptionInfo
+  [msg :- s/Str
+   details :- {s/Any s/Any}]
+  ;; FIXME: Actual error stored in ERRNO...wherever that might be
+  (ex-info msg (assoc details :error-code "Need to extract from ERRNO")))
+
+(s/defn wrap-0mq-fn-call :- s/Int
+  ([f
+    args :- [s/Any]
+    error-msg :- s/Str
+    base-exception-map :- {s/Any s/Any}]
+   (let [success (io! (apply f args))]
+     (when (< success 0)
+       (throw (add-error-detail error-msg base-exception-map)))
+     ;; Every once in a while, the return value
+     ;; means something on success
+     success))
+  ([f
+    args :- [s/Any]
+    error-msg :- s/Str]
+   ;; Because this is really probably all we care about
+   ;; in most cases
+   (wrap-0mq-fn-call f args error-msg {:arguments args})))
 
 (s/defn set-socket-option
   [s :- Socket
@@ -106,13 +126,47 @@ to make swapping back and forth seamless."
    ;; This might be an int, long, or byte[]
    ;; TODO: Get schema to specify that
    value]
-  (ZMQ/zmq_setsockopt s option value))
+  ;; Compilation fails because it can't find zmq_setsockopt
+  ;; Q: What's up?
+  (wrap-0mq-fn-call #_(ZMQ/zmq_setsockopt)
+                    (. ZMQ zmq_setsockopt)
+                    [s option value]
+                    "Setting socket option failed"
+                    {:socket s
+                     :option option
+                     :value value}))
 
 (s/defn set-context-option
   [ctx :- Context
    option :- s/Int
    value :- s/Int]
-  (ZMQ/zmq_ctx_set ctx option value))
+  (wrap-0mq-fn-call ZMQ/zmq_ctx_set
+                    [ctx option value]
+                    "Setting socket option failed"
+                    {:socket s
+                     :option option
+                     :value value}))
+
+(s/defn get-long-socket-option :- s/Int
+  ([sock :- Socket
+    option :- s/Keyword
+    error-message :- s/Str
+    base-error-map :- {s/Any s/Any}]
+   (let [real-option (K/option->const option)]
+     (wrap-0mq-fn-call ZMQ/zmq_getsockopt_long
+                       [option]
+                       error-message
+                       base-error-map)))
+  ([sock :- Socket
+    option :- s/Keyword]
+   (get-long-socket-option sock
+                           option
+                           "Failed to extract socket option"
+                           {:option-name option})))
+
+(s/defn has-more?
+  [sock :- Socket]
+  (get-long-socket-option sock :receive-more))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Public
@@ -130,16 +184,26 @@ There are very few instances where it makes sense to
 do anything more complicated than creating the context when your app starts and then calling
 terminate! on it just before it exits.
 
-Q: Why didn't I name this context! ?"
+TODO: Rename this to context!"
+  ;; TODO: Honestly, need another arity that allows us to set the socket limit
   ([thread-count :- s/Int]
      (io!
       (let [ctx (ZMQ/zmq_ctx_new)]
+        ;; Breaks the pattern followed by pretty much everything else
+        (when (= ctx 0)
+          ;; This is really pretty much undefined.
+          ;; Should always be able to create one
+          (throw (ex-info
+                  "Failed to create a 0mq Context. Haven't tried to apply thread count option yet"
+                 {:thread-count thread-count})))
+        ;; This could very well throw...
         (set-context-option ctx (-> K/const :context-option :threads) thread-count)
         ctx)))
   ([]
-     (let [cpu-count (.availableProcessors (Runtime/getRuntime))]
-       ;; Go with maximum as default
-       (context (dec cpu-count)))))
+   ;; Go with maximum advised as default
+   ;; Minimum of 1...0mq doesn't work well if it isn't allowed to have any threads at all
+   (let [cpu-count (min (.availableProcessors (Runtime/getRuntime)) 2)]
+     (context (dec cpu-count)))))
 
 (s/defn terminate!
   "Stop a messaging context.
@@ -147,7 +211,7 @@ If you have outgoing sockets with a linger value (which is the default), this wi
 those messages are received."
   [ctx :- Context]
   (io!
-   (ZMQ/zmq_ctx_destroy ctx)))
+   (wrap-0mq-fn-call ZMQ/zmq_ctx_destroy [ctx] "Context Termination Failed")))
 
 (defmacro with-context
   "Convenience macro for situations where you can create, use, and kill the context in one place.
@@ -162,23 +226,31 @@ Seems like a great idea in theory, but doesn't seem all that useful in practice"
 TODO: the type really needs to be an enum of keywords"
   [ctx :- Context type :- socket-types]
   (let [^Integer real-type (K/sock->const type)]
-    (io! (ZMQ/zmq_socket ctx real-type))))
+    (let [success (io! (ZMQ/zmq_socket ctx real-type))]
+      ;; The other method that breaks the pattern
+      (when (= success 0)
+        (throw (add-error-detail "Socket creation failed"
+                                 {:type type
+                                  :context ctx}))))))
 
 (s/defn set-linger!
   [s :- Socket
    n :- s/Int]
   (io!
-   (set-socket-option s (-> K/const :socket-options :linger)  n)))
+   (set-socket-option s :linger n)))
 
 (s/defn set-router-mandatory!
-  "This is hugely important
+  "Pretty vital for debugging router socket messaging issues.
 
-Desperately needs documentation"
+0 (default): Silently discards unrouteable messages
+1: Returns EHOSTUNREACHALE if the message cannot be routed
+If the SNDHWM is reach and ZMQ_DONTWAIT is set, send attempts will return EAGAIN
+If SNDHWM without ZMQ_DONTWAIT, will block."
   ([s :- Socket]
    (set-router-mandatory! s true))
   ([s :- Socket
     on :- s/Bool]
-   (.setRouterMandatory s on)))
+   (set-socket-option s :router-mandatory on)))
 
 (s/defn close!
   "You're done with a socket."
@@ -187,8 +259,10 @@ Desperately needs documentation"
   ;; or let set-linger's io! speak for itself?
   ;; Maybe I should just be wrapping up the .close
   ;; here.
-  (io! (set-linger! s 0)
-       (.close s)))
+  (set-linger! s 0)
+  (wrap-0mq-fn-call ZMQ/zmq_close
+                    s
+                    "Invalid socket"))
 
 (defmacro with-socket!
   "Convenience macro for handling the start/use/close pattern"
@@ -203,20 +277,21 @@ Any given machine can only have one socket bound to one endpoint at any given ti
 
 It might be helpful (though ultimately misleading) to think of this call as setting
 up the server side of an interaction."
-  [socket :- ZMQ$Socket
+  [socket :- Socket
    url :- s/Str]
-  (try
-    (io! (.bind socket url))
-    (catch ZMQException ex
-      (throw (ex-info "Binding Failed"
-                      {:url url}
-                      ex))))
+  (wrap-0mq-fn-call
+   ZMQ/zmq_bind
+   [socket url]
+   "Binding Failure"
+   {:socket socket
+    :url url}))
 
   (s/defn bind-random-port! :- s/Int
     "Binds to the first free port. Endpoint should be of the form
 \"<transport>://address\". (It automatically adds the port).
 Returns the port number"
-    ([socket :- ZMQ$Socket endpoint :- s/Str]
+    ([socket :- ZMQ$Socket
+      endpoint :- s/Str]
      (let [port (bind-random-port! socket endpoint 49152 65535)]
        (println (str "Managed to bind to port '" port "'"))
        port))
@@ -228,28 +303,25 @@ Returns the port number"
       endpoint :- s/Str
       min :- s/Int
       max :- s/Int]
-     (io!
-      (.bindToRandomPort socket endpoint min max)))))
+     ;; TODO: Implement retries on failure
+     (let [range (- max min)
+           port (+ (rand-int range) min)]
+       (bind! socket (str endpoint ":" port)))))
 
-(s/defn unbind! :- s/Int
-  [socket :- ZMQ$Socket
+(s/defn unbind!
+  [socket :- Socket
    url :- s/Str]
-  (io!
-   (try
-     ;; TODO: Check the protocol.
-     ;; If it's inproc, just skip the inevitable
-     ;; failure and pretend everything was kosher.
-     ;; Q: Could that cause problems?
-     (.unbind socket url)
-     (catch ZMQException ex
-       (throw (ex-info "Unbinding failed"
-                       {:url url
-                        :socket socket}
-                       ex))))))
+  ;; TODO: Check the protocol.
+  ;; If it's inproc, just skip the inevitable
+  ;; failure and pretend everything was kosher.
+  ;; Q: Could that cause problems?
+  (wrap-0mq-fn-call ZMQ/zmq_unbind
+                    [socket url]
+                    "Unable to release socket binding"))
 
-(s/defn bound-socket! :- ZMQ$Socket
+(s/defn bound-socket! :- Socket
   "Return a new socket bound to the specified address"
-  [ctx :- ZMQ$Context
+  [ctx :- Context
    type :- s/Keyword
    url :- s/Str]
   (let [s (socket! ctx type)]
@@ -265,11 +337,15 @@ Returns the port number"
          ~@body
          (finally
            ;; This is probably redundant, since the socket will be
-           ;; going away pretty much immediately.
+           ;; going away pretty much immediately anyway.
+           ;; Still...better safe than sorry
            (unbind! ~name# ~url))))))
 
 
-;;; TODO: Desperately need to test this
+;;; N.B.: This is pretty much totally untested, because
+;;; I've never found any actual use for it.
+;;; It was really just a "good" excuse to dabble with
+;;; macros
 (defmacro with-randomly-bound-socket!
   [[name port-name ctx type url] & body]
   `(let [url# ~url]
@@ -281,12 +357,14 @@ Returns the port number"
 (s/defn connect!
   [socket :- Socket
    url :- s/Str]
-  (io! (.connect socket url)))
+  (wrap-0mq-fn-call ZMQ/zmq_connect [socket url]
+                    "Unable to connect"))
 
 (s/defn disconnect!
   [socket :- Socket
    url :- s/Str]
-  (io! (.disconnect socket url)))
+  (wrap-0mq-fn-call ZMQ/zmq_disconnect [socket url]
+                    "Unable to connect"))
 
 (defmacro with-connected-socket!
   [[name ctx type url] & body]
@@ -310,8 +388,9 @@ Returns the port number"
 
 (s/defn subscribe!
   "SUB sockets won't start receiving messages until they've subscribed"
-  ([socket :- ZMQ$Socket topic :- s/Str]
-   (io! (.subscribe socket (.getBytes topic))))
+  ([socket :- Socket
+    topic :- s/Str]
+   (set-socket-option socket :subscribe (.getBytes topic)))
   ([socket :- ZMQ$Socket]
      ;; Subscribes to all incoming messages
      (subscribe! socket "")))
@@ -325,20 +404,19 @@ Returns the port number"
 
 (s/defn build-internal-pair! :- InternalPair
   [ctx :- Context]
-  (io! (let [url (str "inproc://" (gensym))]
-         ;; Note that, according to the docs,
-         ;; binding must happen first (although
-         ;; it doesn't seem to matter in practice)
-         ;; As of 2012, this was a long-standing bug.
-         {:rhs (bound-socket! ctx :pair url)
-          ;; TODO: Verify that connect succeeded!
-          :lhs (connected-socket! ctx :pair url)
-          :url url})))
+  (let [url (str "inproc://" (gensym))]
+    ;; Note that, according to the docs,
+    ;; binding must happen first (although
+    ;; it doesn't seem to matter in practice)
+    ;; As of 2012, this was a long-standing bug.
+    {:rhs (bound-socket! ctx :pair url)
+     :lhs (connected-socket! ctx :pair url)
+     :url url}))
 
 (s/defn close-internal-pair!
   [pair :- InternalPair]
   ;; Q: Is there any point to setting linger to 0?
-  (println "cljeromo: Stopping an internal pair")
+  (println "cljeromq: Stopping an internal pair")
   (disconnect! (:lhs pair) (:url pair))
   (println "lhs disconnected")
   (close! (:lhs pair))
@@ -349,33 +427,34 @@ Returns the port number"
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Send
 
-(defmulti send! (fn [^ZMQ$Socket socket message & flags]
+(defmulti send! (fn [socket message & flags]
                   (class message)))
 
 (defmethod send! String
-  ([^ZMQ$Socket socket ^String message flags]
+  ([socket ^String message flags]
      ;; FIXME: Debug only
      (comment (println "Sending string:\n" message))
      ;; My original plan was that this would convert the string
      ;; to clojure.core$bytes, so it would call the method above
      (send! socket (.getBytes message) flags))
-  ([^ZMQ$Socket socket ^String message]
+  ([socket ^String message]
      (io! (send! socket message :dont-wait))))
 
 (defmethod send! byte-array-class
-  ([^ZMQ$Socket socket message]
+  ([socket message]
    (send! socket message [:dont-wait]))
-  ([^ZMQ$Socket socket message flags]
+  ([socket message flags]
    ;; Java parameters:
    ;; java byte array message
    ;; offset - where the message starts in that array?
    ;; number of bytes to send
    ;; flags
    (comment (println "Sending a byte array"))
-   (.send socket message 0 (count message) (K/flags->const flags))))
+   (wrap-0mq-fn-call ZMQ/zmq_send [socket message 0 (count message) (K/flags->const flags)]
+                     "Sending a byte array failed")))
 
 (defmethod send! :default
-  ([^ZMQ$Socket socket message flags]
+  ([socket message flags]
    (comment)
    (println "Default Send trying to transmit:\n" message "\n(a"
             (class message) ")")
@@ -388,17 +467,17 @@ Returns the port number"
    ;; serialization at all, but it makes sense to at least start
    ;; this out here.
    (send! socket (pr-str message) flags))
-  ([^ZMQ$Socket socket message]
+  ([socket message]
    (send! socket message :dont-wait)))
 
-(s/defn send-partial! [socket :- ZMQ$Socket message]
+(s/defn send-partial! [socket :- Socket message]
   "I'm seeing this as a way to send all the messages in an envelope, except
 the last.
 Yes, it seems dumb, but it was convenient at one point.
 Honestly, that's probably a clue that this basic idea is just wrong."
   (send! socket message :send-more))
 
-(s/defn send-all! [socket :- ZMQ$Socket messages]
+(s/defn send-all! [socket :- Socket messages]
   "At this point, I'm basically envisioning the usage here as something like HTTP.
 Where the headers back and forth carry more data than the messages.
 This approach is a total cop-out.
@@ -439,28 +518,33 @@ with core clojure functionality"
       (recur (f-in)))))
 
 (s/defn identify!
-  [socket :- ZMQ$Socket name :- s/Str]
-  (io! (.setIdentity socket (.getBytes name))))
+  [socket :- Socket name :- s/Str]
+  (set-socket-option socket :identity (.getBytes name)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Receive
 
-(s/defn raw-recv!  ; Returns byte array
-  ([socket :- ZMQ$Socket
+(s/defn raw-recv! :- byte-array-class
+  ([socket :- Socket
     flags :- K/keyword-or-seq]
    (comment (println "Top of raw-recv"))
    (let [flags (K/flags->const flags)]
      (comment (println "Receiving from socket (flags:" flags ")"))
-     (.recv socket flags)))
+     ;; Q: How do I know whether this failed?
+     ;; A: At the moment, there really isn't any way
+     (ZMQ/zmq_recv socket flags)))
   ([socket :- ZMQ$Socket]
    (comment (println "Parameterless raw-recv"))
    (raw-recv! socket :wait)))
 
-(defn recv!
+(s/defn recv!
   "For receiving non-binary messages.
 Strings are the most obvious alternative.
-More importantly (probably) is EDN."
-  ([^ZMQ$Socket socket flags]
+EDN is the most obvious thing to send that way.
+Though people stuck with inferior languages on the
+other side might need to resort to something like JSON"
+  ([socket :- Socket
+    flags]
    (comment (println "\tListening. Flags: " flags))
    (io!
     (when-let [^bytes binary (raw-recv! socket flags)]
@@ -483,21 +567,21 @@ More importantly (probably) is EDN."
               ;; difficult.
               (edn/read-string actual-content)))
           s)))))
-  ([#^ZMQ$Socket socket]
+  ([socket :- Socket]
    (recv! socket :wait)))
 
 (s/defn recv-all!
   "Receive all available message parts.
 Q: Does it make sense to accept flags here?
 A: Absolutely. May want to block or not."
-  ([socket :- ZMQ$Socket flags]
+  ([socket :- Socket flags]
       (loop [acc []]
         (let [msg (recv! socket flags)
               result (conj acc msg)]
           (if (has-more? socket)
             (recur result)
             result))))
-  ([socket :- ZMQ$Socket]
+  ([socket :- Socket]
      ;; FIXME: Is this actually the flag I want?
      (recv-all! socket :wait)))
 
@@ -505,20 +589,20 @@ A: Absolutely. May want to block or not."
 ;; that I've re-written above.
 ;; FIXME: Verify that. See what (if anything) is worth saving.
 (s/defn recv-str! :- s/Str
-  ([socket :- ZMQ$Socket]
+  ([socket :- Socket]
       (-> socket recv! String. .trim))
-  ([socket :- ZMQ$Socket flags]
+  ([socket :- Socket flags]
      ;; This approach risks NPE:
      ;;(-> socket (recv flags) String. .trim)
      (when-let [s (recv! socket flags)]
        (-> s String. .trim))))
 
 (s/defn recv-all-str! :- [s/Str]
-  "How much overhead gets added by just converting the received primitive
+  "Q: How much overhead gets added by just converting the received primitive
 Byte[] to strings?"
-  ([socket :- ZMQ$Socket]
+  ([socket :- Socket]
      (recv-all-str! socket 0))
-  ([socket :- ZMQ$Socket flags]
+  ([socket :- Socket flags]
      (let [packets (recv-all! socket flags)]
        (map #(String. %) packets))))
 
@@ -527,9 +611,9 @@ Byte[] to strings?"
 It's also quite convenient:
 read a string from a socket and convert it to a clojure object.
 That's how this is really meant to be used, if you can trust your peers."
-  ([socket :- ZMQ$Socket]
+  ([socket :- Socket]
      (-> socket recv-str! read))
-  ([socket :- ZMQ$Socket flags]
+  ([socket :- Socket flags]
      (when-let [s (recv-str! socket flags)]
        (edn/read-string s))))
 
@@ -537,16 +621,17 @@ That's how this is really meant to be used, if you can trust your peers."
 ;;; Polling
 ;;; TODO: this part needs some TLC
 
-(s/defn poller :- Poller
-  "Return a new Poller instance.
+(s/defn poll-item-array :- PollItemArray
+  "Return a new PollItemArray instance.
 Callers probably shouldn't be using something this low-level.
 Except when they need to.
 There doesn't seem any good reason to put effort into hiding it."
   [socket-count :- s/Int]
-  (ZMQ$Poller. socket-count))
+  (.allocatePollItems PollItemArray/PollItemArray socket-count))
 
 (s/defn poll :- s/Int
   "Returns the number of sockets available in the poller
+
 This is just a wrapper around the base handler.
 It feels dumb and more than a little pointless. Aside from the
 fact that I think it's wrong.
@@ -554,24 +639,49 @@ Q: Why do I have a problem with it?
 Aside from the fact that it seems like it'd be better to return a
 lazy seq of available sockets.
 For that matter, it seems like it would be better to just implement
-ISeq and return the next message as it becomes ready."
-  ([poller :- Poller]
-     (.poll poller))
-  ([poller :- Poller timeout :- s/Int]
-     (.poll poller timeout)))
+ISeq and return the next message as it becomes ready.
+
+But this is a start."
+  ([poller :- PollItemArray]
+   (poll poller 0))
+  ([poller :- PollItemArray
+    timeout :- s/Int]
+   (wrap-0mq-fn-call ZMQ/zmq_poll poller timeout)))
 
 (s/defn register-socket-in-poller!
-  "Register a socket to poll on."
-  [poller :- Poller
+  "Register a socket to poll on.
+This didn't make a lot of sense in the original.
+Seems almost totally pointless, given the current implementation"
+  [poller :- PollItemArray
    socket :- Socket]
-  (io! (.register poller socket (K/poll-opts :poll-in))))
+  (throw (RuntimeError. "obsolete")))
 
 (s/defn unregister-socket-in-poller!
   [poller :- Poller
    socket :- Socket]
-  (io! (.unregister poller socket)))
+  (throw (RuntimeError. "obsolete")))
 
-(defmacro with-poller [[poller-name context socket] & body]
+(s/defn socket-poller :- PollItemArray
+  ;; The values in this map are really korks
+  ;; TODO: What does the Schema look like for that now?
+  [socks :- {Socket [s/Keywords]}]
+  (let [length (count socks)
+        result (poll-item-array n)
+        lazy-seq (map-indexed
+                  (fn [idx sock]
+                    (let [poll-item (.get result idx)
+                          poll-opt-keys (get socks sock)
+                          poll-opts (K/poll-opts poll-opt-keys)]
+                      (io!
+                       (.setSocket poll-item sock)
+                       (.setEvents poll-item poll-opts))))
+                  (keys socks))]
+    ;; Make sure the side-effects happen
+    (dorun lazy-seq)
+    result))
+
+(comment
+  (defmacro with-poller [[poller-name context socket] & body]
   "Cut down on some of the boilerplate around pollers.
 What's left still seems pretty annoying.
 Of course, a big part of the point to real pollers is
@@ -582,21 +692,28 @@ dealing with multiple sockets"
      ;; poller-name might be OK to deref multiple times, since it's
      ;; almost definitely a symbol.
      ;; That same is true of socket, isn't it?
-     ;; TODO: Ask Steven
      (cljeromq.core/register-socket-in-poller!  ~socket ~poller-name :poll-in :poll-err)
      (try
        ~@body
        (finally
-         (cljeromq.core/unregister-socket-in-poller! ~socket ~poller-name)))))
+         (cljeromq.core/unregister-socket-in-poller! ~socket ~poller-name))))))
+
 
 (s/defn socket-poller-in!
   "Attach a new poller to a seq of sockets.
 Honestly, should be smarter and just let me poll on a single socket."
   [sockets :- [Socket]]
-  (let [checker (poller (count sockets))]
-    (doseq [s sockets]
-      (register-socket-in-poller! s checker))
-    checker))
+  (let [descr (reduce (fn [acc next]
+                        (assoc acc next :poll-in))
+                      {}
+                      sockets)]
+    (socket-poller descr)))
+
+(s/defn events-polled :- s/Int
+  [poller :- PollItemArray
+   index :- s/Int]
+  (let [item (.get poller index)]
+    (.getREvents item)))
 
 (s/defn in-available? :- s/Bool
   "Did the last poll trigger poller's POLLIN flag on socket n?
@@ -605,9 +722,10 @@ Yes, this is the low-level interface aspect that I want to hide.
 There are err and out versions that do the same thing.
 
 Currently, I only need this one."
-  [poller :- Poller
-   n :- s/Int]
-  (.pollin poller n))
+  [poller :- PollItemArray
+   index :- s/Int]
+  (let [ready-events (events-polled poller index)]
+    (not= 0 (bit-and ready-events (K/poll-opts :poll-in)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Helpers of dubious value
@@ -648,7 +766,7 @@ Then again, it's fairly lispy...callers can always rediret STDOUT."
     n :- s/Int]
     (let [rdn (Random. (System/currentTimeMillis))]
       (identify! socket (str (.nextLong rdn) "-" (.nextLong rdn) n))))
-  ([#^ZMQ$Socket socket]
+  ([socket :- Socket]
      (set-id! socket 0)))
 
 (defn string->bytes
