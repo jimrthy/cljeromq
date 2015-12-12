@@ -1,25 +1,26 @@
 (ns cljeromq.core-test
-  (:import [org.zeromq ZMQ ZMQException])
+  (:import [clojure.lang ExceptionInfo]
+           [org.zeromq.jni ZMQ])
   (:require [cljeromq.core :as core]
             [clojure.test :refer (deftest is)]))
 
 (defn setup
   [uri client-type server-type]
-    (let [ctx (ZMQ/context 1)]
-        (let [client (.socket ctx client-type)]
-            (.connect client uri)
-            (let [server (.socket ctx server-type)]
-              (.bind server uri)
+    (let [ctx (core/context 1)]
+        (let [client (core/socket! ctx client-type)]
+            (core/connect! client uri)
+            (let [server (core/socket! ctx server-type)]
+              (core/bind! server uri)
               [ctx client server]))))
 
 (defn teardown
   ([{:keys [context client server uri unbind-server?]}]
      (when unbind-server?
-       (.unbind server uri))
-     (.close server)
-     (.disconnect client uri)
-     (.close client)
-     (.term context))
+       (core/unbind! server uri))
+     (core/close! server)
+     (core/disconnect! client uri)
+     (core/close! client)
+     (core/terminate! context))
   ([ctx client server uri]
      (teardown {:context ctx
                 :client client
@@ -32,12 +33,12 @@
   (let [uri "inproc://a-test-1"
         [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
     (try
-      (let [client (future (.send req "HELO")
-                           (String. (.recv req)))]
-        (let [greet (.recv rep)]
+      (let [client (future (core/send! req "HELO")
+                           (String. (core/recv! req)))]
+        (let [greet (core/recv! rep)]
           (is (= (String. greet) "HELO")
               "String transmission failed"))
-        (.send rep "kthxbye")
+        (core/send! rep "kthxbye")
         (is (= @client "kthxbye")))
       (finally
         ;; Can't unbind inproc socket
@@ -45,9 +46,9 @@
         ;; It should be fixed in 4.1.0, but backporting to 4.0.x
         ;; has been deemed not worth the effort
         (try
-          (.unbind rep uri)
+          (core/unbind! rep uri)
           (is false "0mq bug got fixed")
-          (catch ZMQException ex
+          (catch ExceptionInfo ex
             (is (= ex "No such file or directory"))))
         (teardown {:context ctx
                    :client req
@@ -60,11 +61,11 @@
   (let [uri "tcp://127.0.0.1:8709"
         [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
     (try
-      (let [client (future (.send req "HELO")
-                           (String. (.recv req)))]
-        (let [greet (.recv rep)]
+      (let [client (future (core/send! req "HELO")
+                           (String. (core/recv! req)))]
+        (let [greet (core/recv! rep)]
           (is (= "HELO" (String. greet))))
-        (.send rep "kthxbye")
+        (core/send! rep "kthxbye")
         (is (= @client "kthxbye")))
       (finally
         (teardown ctx req rep uri)))))
@@ -141,7 +142,7 @@
   (println "Setting up context")
   (core/with-context [ctx 1]
     (println "Setting up receiver")
-    (core/with-socket! [receiver ctx :rep]
+    (core/with-socket [receiver ctx :rep]
       (is receiver "Macro didn't create local")
       (println "Receiver: " receiver)
 
@@ -150,7 +151,7 @@
         (println "Binding receiver")
         (core/bind! receiver url)
         (println "Setting up sender")
-        (core/with-socket! [sender ctx :req]
+        (core/with-socket [sender ctx :req]
           (println "Connecting sender")
           (core/connect! sender url)
 
@@ -168,7 +169,7 @@
 
 (deftest check-unbinding []
   (core/with-context [ctx 1]
-    (core/with-socket! [nothing ctx :rep]
+    (core/with-socket [nothing ctx :rep]
       (let [addr "tcp://*:5678"]
         (core/bind! nothing addr)
         (println "Have a socket bound")

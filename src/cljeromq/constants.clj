@@ -48,13 +48,13 @@ Although, really, that's almost pedantic."
              :poll-out ZMQ/POLLOUT
              :poll-err ZMQ/POLLERR}
 
-   :socket-options {:curve-server ZMQ/CURVE_SERVER            ; 47 -- set to 1 for yes, 0 for no
-                    ;; the next two are for the client
-                    :curve-public-key ZMQ/CURVE_PUBLICKEY    ; 48
-                    :curve-secret-key ZMQ/CURVE_SECRETKEY    ; 49
+   :socket-options {;; the next two are for the client
+                    :curve-public-key ZMQ/CURVE_PUBLICKEY     ; 48
+                    :curve-secret-key ZMQ/CURVE_SECRETKEY     ; 49
+                    :curve-server ZMQ/CURVE_SERVER            ; 47 -- set to 1 for yes, 0 for no
                     ;; The server just needs the private key
                     ;; The client's what needs this.
-                    :curve-server-key ZMQ/CURVE_SERVERKEY    ; 50
+                    :curve-server-key ZMQ/CURVE_SERVERKEY     ; 50
                     :identity ZMQ/IDENTITY                    ; 5
                     :linger ZMQ/LINGER
                     :receive-more ZMQ/RCVMORE                 ; 13
@@ -137,7 +137,7 @@ socket options."
 (s/defn option->const :- s/Int
   "Convert a keyword naming a socket option to a ZMQ constant"
   [name :- s/Keyword]
-  (-> :socket-options const key))
+  (-> :socket-options const name))
 
 (defn poll-opts
   [korks]

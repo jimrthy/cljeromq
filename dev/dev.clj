@@ -1,5 +1,7 @@
 (ns dev
-  (:require [cljeromq.core :as mq]
+  (:require [cljeromq.constants :as K]
+            [cljeromq.core :as mq]
+            [cljeromq.curve :as curve]
             [clojure.java.io :as io]
             [clojure.inspector :as i]
             [clojure.string :as str]
@@ -8,7 +10,8 @@
             [clojure.test :as test]
             [clojure.tools.namespace.repl :refer (refresh refresh-all)]
             #_[com.stuartsierra.component :as component]
-            [schema.core :as s]))
+            [schema.core :as s])
+  (:import [org.zeromq.jni ZMQ]))
 
 (comment
   (def system nil)

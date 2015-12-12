@@ -56,8 +56,6 @@ the public key."
   [sock :- cljeromq/Socket
    private-key :- byte-array-type]
 
-  (comment (.makeIntoCurveServer sock private-key))
-
   ;; TODO: Move this comment into jzmq
   ;; official tests also set the ZMQ_IDENTITY option.
   ;; Q: What does that actually do?
@@ -72,7 +70,8 @@ the public key."
   ;; are full of complaints about how this *should*
   ;; work and confusion over how it actually does.
   ;; So...probably a good idea to do, at least in theory.
-  (throw (RuntimeException. "Get this ported over")))
+  (cljeromq/set-socket-option! sock :curve-server true)
+  (cljeromq/set-socket-option! sock :curve-private-key private-key))
 
 (s/defn prepare-client-socket-for-server!
   "Adjust socket options to make it suitable for connecting as
@@ -83,10 +82,10 @@ Which seems like a truly horrid idea."
    {:keys [public private :as client-key-pair]} :- key-pair
    server-public-key :- byte-array-type]
   (comment (.makeIntoCurveClient sock (ZCurveKeyPair. public private) server-public-key))
-  (cljeromq/set-socket-option sock :curve-server false)
-  (cljeromq/set-socket-option sock :curve-server-key server-public-key)
-  (cljeromq/set-socket-option sock :curve-public-key public)
-  (cljeromq/set-socket-option sock :curve-private-key private))
+  (cljeromq/set-socket-option! sock :curve-server false)
+  (cljeromq/set-socket-option! sock :curve-server-key server-public-key)
+  (cljeromq/set-socket-option! sock :curve-public-key public)
+  (cljeromq/set-socket-option! sock :curve-private-key private))
 
 (s/defn server-socket :- cljeromq/Socket
   "Create a new socket suitable for use as a CURVE server.
