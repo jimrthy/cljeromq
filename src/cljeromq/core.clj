@@ -104,21 +104,19 @@ to make swapping back and forth seamless."
 
 (s/defn wrap-0mq-fn-call :- s/Int
   ([f
-    args :- [s/Any]
     error-msg :- s/Str
     base-exception-map :- {s/Any s/Any}]
-   (let [success (io! (apply f args))]
+   (let [success (io! (f))]
      (when (< success 0)
        (throw (add-error-detail error-msg base-exception-map)))
      ;; Every once in a while, the return value
      ;; means something on success
      success))
   ([f
-    args :- [s/Any]
     error-msg :- s/Str]
    ;; Because this is really probably all we care about
    ;; in most cases
-   (wrap-0mq-fn-call f args error-msg {:arguments args})))
+   (wrap-0mq-fn-call f error-msg {})))
 
 (s/defn set-socket-option
   [s :- Socket
@@ -128,9 +126,7 @@ to make swapping back and forth seamless."
    value]
   ;; Compilation fails because it can't find zmq_setsockopt
   ;; Q: What's up?
-  (wrap-0mq-fn-call #_(ZMQ/zmq_setsockopt)
-                    (. ZMQ zmq_setsockopt)
-                    [s option value]
+  (wrap-0mq-fn-call #(ZMQ/zmq_setsockopt s option value)
                     "Setting socket option failed"
                     {:socket s
                      :option option
@@ -140,10 +136,9 @@ to make swapping back and forth seamless."
   [ctx :- Context
    option :- s/Int
    value :- s/Int]
-  (wrap-0mq-fn-call ZMQ/zmq_ctx_set
-                    [ctx option value]
+  (wrap-0mq-fn-call #(ZMQ/zmq_ctx_set ctx option value)
                     "Setting socket option failed"
-                    {:socket s
+                    {:context ctx
                      :option option
                      :value value}))
 
@@ -153,8 +148,7 @@ to make swapping back and forth seamless."
     error-message :- s/Str
     base-error-map :- {s/Any s/Any}]
    (let [real-option (K/option->const option)]
-     (wrap-0mq-fn-call ZMQ/zmq_getsockopt_long
-                       [option]
+     (wrap-0mq-fn-call #(ZMQ/zmq_getsockopt_long sock option)
                        error-message
                        base-error-map)))
   ([sock :- Socket
@@ -210,8 +204,8 @@ TODO: Rename this to context!"
 If you have outgoing sockets with a linger value (which is the default), this will block until
 those messages are received."
   [ctx :- Context]
-  (io!
-   (wrap-0mq-fn-call ZMQ/zmq_ctx_destroy [ctx] "Context Termination Failed")))
+  (wrap-0mq-fn-call #(ZMQ/zmq_ctx_destroy ctx)
+                     "Context Termination Failed"))
 
 (defmacro with-context
   "Convenience macro for situations where you can create, use, and kill the context in one place.
@@ -260,8 +254,7 @@ If SNDHWM without ZMQ_DONTWAIT, will block."
   ;; Maybe I should just be wrapping up the .close
   ;; here.
   (set-linger! s 0)
-  (wrap-0mq-fn-call ZMQ/zmq_close
-                    s
+  (wrap-0mq-fn-call #(ZMQ/zmq_close s)
                     "Invalid socket"))
 
 (defmacro with-socket!
@@ -280,8 +273,7 @@ up the server side of an interaction."
   [socket :- Socket
    url :- s/Str]
   (wrap-0mq-fn-call
-   ZMQ/zmq_bind
-   [socket url]
+   #(ZMQ/zmq_bind socket url)
    "Binding Failure"
    {:socket socket
     :url url}))
@@ -290,16 +282,16 @@ up the server side of an interaction."
     "Binds to the first free port. Endpoint should be of the form
 \"<transport>://address\". (It automatically adds the port).
 Returns the port number"
-    ([socket :- ZMQ$Socket
+    ([socket :- Socket
       endpoint :- s/Str]
      (let [port (bind-random-port! socket endpoint 49152 65535)]
        (println (str "Managed to bind to port '" port "'"))
        port))
-    ([socket :- ZMQ$Socket
+    ([socket :- Socket
       endpoint :- s/Str
       min :- s/Int]
      (bind-random-port! socket endpoint min 65535))
-    ([socket :- ZMQ$Socket
+    ([socket :- Socket
       endpoint :- s/Str
       min :- s/Int
       max :- s/Int]
@@ -315,8 +307,7 @@ Returns the port number"
   ;; If it's inproc, just skip the inevitable
   ;; failure and pretend everything was kosher.
   ;; Q: Could that cause problems?
-  (wrap-0mq-fn-call ZMQ/zmq_unbind
-                    [socket url]
+  (wrap-0mq-fn-call #(ZMQ/zmq_unbind socket url)
                     "Unable to release socket binding"))
 
 (s/defn bound-socket! :- Socket
@@ -357,13 +348,13 @@ Returns the port number"
 (s/defn connect!
   [socket :- Socket
    url :- s/Str]
-  (wrap-0mq-fn-call ZMQ/zmq_connect [socket url]
+  (wrap-0mq-fn-call #(ZMQ/zmq_connect socket url)
                     "Unable to connect"))
 
 (s/defn disconnect!
   [socket :- Socket
    url :- s/Str]
-  (wrap-0mq-fn-call ZMQ/zmq_disconnect [socket url]
+  (wrap-0mq-fn-call #(ZMQ/zmq_disconnect socket url)
                     "Unable to connect"))
 
 (defmacro with-connected-socket!
@@ -391,13 +382,13 @@ Returns the port number"
   ([socket :- Socket
     topic :- s/Str]
    (set-socket-option socket :subscribe (.getBytes topic)))
-  ([socket :- ZMQ$Socket]
+  ([socket :- Socket]
      ;; Subscribes to all incoming messages
      (subscribe! socket "")))
 
 (s/defn unsubscribe!
   ([socket :- Socket topic :- s/Str]
-   (io! (.unsubscribe socket (.getBytes topic))))
+   (set-socket-option socket :unsubscribe (.getBytes topic)))
   ([socket :- Socket]
    ;; Q: This *does* unsubscribe from everything, doesn't it?
    (unsubscribe! socket "")))
@@ -450,7 +441,7 @@ Returns the port number"
    ;; number of bytes to send
    ;; flags
    (comment (println "Sending a byte array"))
-   (wrap-0mq-fn-call ZMQ/zmq_send [socket message 0 (count message) (K/flags->const flags)]
+   (wrap-0mq-fn-call #(ZMQ/zmq_send socket message 0 (count message) (K/flags->const flags))
                      "Sending a byte array failed")))
 
 (defmethod send! :default
@@ -533,7 +524,7 @@ with core clojure functionality"
      ;; Q: How do I know whether this failed?
      ;; A: At the moment, there really isn't any way
      (ZMQ/zmq_recv socket flags)))
-  ([socket :- ZMQ$Socket]
+  ([socket :- Socket]
    (comment (println "Parameterless raw-recv"))
    (raw-recv! socket :wait)))
 
@@ -627,7 +618,7 @@ Callers probably shouldn't be using something this low-level.
 Except when they need to.
 There doesn't seem any good reason to put effort into hiding it."
   [socket-count :- s/Int]
-  (.allocatePollItems PollItemArray/PollItemArray socket-count))
+  (PollItemArray/allocatePollItems socket-count))
 
 (s/defn poll :- s/Int
   "Returns the number of sockets available in the poller
@@ -646,7 +637,7 @@ But this is a start."
    (poll poller 0))
   ([poller :- PollItemArray
     timeout :- s/Int]
-   (wrap-0mq-fn-call ZMQ/zmq_poll poller timeout)))
+   (wrap-0mq-fn-call #(ZMQ/zmq_poll poller timeout))))
 
 (s/defn register-socket-in-poller!
   "Register a socket to poll on.
@@ -654,19 +645,19 @@ This didn't make a lot of sense in the original.
 Seems almost totally pointless, given the current implementation"
   [poller :- PollItemArray
    socket :- Socket]
-  (throw (RuntimeError. "obsolete")))
+  (throw (RuntimeException. "obsolete")))
 
 (s/defn unregister-socket-in-poller!
-  [poller :- Poller
+  [poller :- PollItemArray
    socket :- Socket]
-  (throw (RuntimeError. "obsolete")))
+  (throw (RuntimeException. "obsolete")))
 
 (s/defn socket-poller :- PollItemArray
   ;; The values in this map are really korks
   ;; TODO: What does the Schema look like for that now?
-  [socks :- {Socket [s/Keywords]}]
+  [socks :- {Socket [s/Keyword]}]
   (let [length (count socks)
-        result (poll-item-array n)
+        result (poll-item-array length)
         lazy-seq (map-indexed
                   (fn [idx sock]
                     (let [poll-item (.get result idx)
