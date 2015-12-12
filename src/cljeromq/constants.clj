@@ -115,10 +115,10 @@ Although, really, that's almost pedantic."
   ((const :control) key))
 
 (s/defn flags->const :- s/Int
-  [flags :- keyword-or-seq]
   "Use in conjunction with control-const to convert a series
 of/individual keyword into a logical-or'd flag to control
 socket options."
+  [flags :- keyword-or-seq]
   (if-let [result (if (or (seq? flags)
                           (vector? flags))
                     (reduce bit-or
@@ -134,9 +134,9 @@ socket options."
   [key :- s/Keyword]
   ((const :socket-type) key))
 
-(defn option->const
+(s/defn option->const :- s/Int
   "Convert a keyword naming a socket option to a ZMQ constant"
-  [key]
+  [name :- s/Keyword]
   (-> :socket-options const key))
 
 (defn poll-opts

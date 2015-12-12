@@ -118,6 +118,7 @@ to make swapping back and forth seamless."
    ;; in most cases
    (wrap-0mq-fn-call f error-msg {})))
 
+;;; TODO: Rename to set-socket-option!
 (s/defn set-socket-option
   [s :- Socket
    option :- s/Int
@@ -461,14 +462,15 @@ Returns the port number"
   ([socket message]
    (send! socket message :dont-wait)))
 
-(s/defn send-partial! [socket :- Socket message]
+(s/defn send-partial!
   "I'm seeing this as a way to send all the messages in an envelope, except
 the last.
 Yes, it seems dumb, but it was convenient at one point.
 Honestly, that's probably a clue that this basic idea is just wrong."
+  [socket :- Socket message]
   (send! socket message :send-more))
 
-(s/defn send-all! [socket :- Socket messages]
+(s/defn send-all!
   "At this point, I'm basically envisioning the usage here as something like HTTP.
 Where the headers back and forth carry more data than the messages.
 This approach is a total cop-out.
@@ -476,6 +478,7 @@ There's no way it's appropriate here.
 I just need to get something written for my
 \"get the rope thrown across the bridge\" approach.
 It totally falls apart when I'm just trying to send a string."
+  [socket :- Socket messages]
   (doseq [m messages]
     (send-partial! socket m))
   (send! socket ""))
@@ -637,7 +640,7 @@ But this is a start."
    (poll poller 0))
   ([poller :- PollItemArray
     timeout :- s/Int]
-   (wrap-0mq-fn-call #(ZMQ/zmq_poll poller timeout))))
+   (wrap-0mq-fn-call #(ZMQ/zmq_poll poller timeout) "Polling failed")))
 
 (s/defn register-socket-in-poller!
   "Register a socket to poll on.

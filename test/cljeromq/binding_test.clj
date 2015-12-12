@@ -1,160 +1,164 @@
 (ns cljeromq.binding-test
-  (:import [org.zeromq ZMQ
-            ZMQException
-            ZCurveKeyPair])
+  (:import [org.zeromq.jni ZMQ])
   (:require [clojure.test :refer :all]
-            [cljeromq.core :refer :all]))
+            [cljeromq.core :as cljeromq]
+            [cljeromq.curve :as curve]))
 
 (deftest req-rep-inproc-unencrypted-handshake
   (testing "Basic inproc req/rep handshake test"
     (let [uri "inproc://a-test-1"
-          ctx (ZMQ/context 1)]
+          ctx (cljeromq/context 1)]
       (println "Checking req/rep unencrypted inproc")
       (try
-        (let [req (.socket ctx ZMQ/REQ)]
+        (let [req (cljeromq/socket! ctx :request)]
           (try
-            (.bind req uri)
+            (cljeromq/bind! req uri)
             (try
-              (let [rep (.socket ctx ZMQ/REP)]
+              (let [rep (cljeromq/socket! ctx :reply)]
                 (try
-                  (.connect rep uri)
+                  (cljeromq/connect! rep uri)
                   (try
-                    (let [client (future (.send req "HELO")
-                                         (String. (.recv req)))]
-                      (let [greet (.recv rep)]
+                    (let [client (future (cljeromq/send! req "HELO")
+                                         (String. (cljeromq/recv! req)))]
+                      (let [greet (cljeromq/recv! rep)]
                         (is (= "HELO" (String. greet))))
-                      (.send rep "kthxbye")
+                      (cljeromq/send! rep "kthxbye")
                       (is (= @client "kthxbye")))
                     (finally
-                      (.disconnect rep uri)))
+                      (cljeromq/disconnect! rep uri)))
                   (finally
-                    (.close rep))))
+                    (cljeromq/close! rep))))
               (finally
                 ;; Can't unbind inproc socket
                 ;; This is actually Bug #949 in libzmq.
                 ;; It should be fixed in 4.1.0, but backporting to 4.0.x
                 ;; has been deemed not worth the effort
-                (is (thrown-with-msg? ZMQException #"No such file or directory"
-                                      (.unbind req uri)))))
-            (finally (.close req))))
+                (comment (is (thrown-with-msg? ZMQException #"No such file or directory"
+                                               (.unbind req uri))))
+                ;; So...what happens now?
+                (cljeromq/unbind! req uri)))
+            (finally (cljeromq/close! req))))
         (finally
-          (.term ctx))))))
+          (cljeromq/terminate! ctx))))))
 
 (deftest simplest-tcp-test
   (testing "TCP REP/REQ handshake"
     (let [uri "tcp://127.0.0.1:8592"
-          ctx (ZMQ/context 1)]
+          ctx (cljeromq/context 1)]
       (println "Basic rep/req unencrypted TCP test")
       (try
-        (let [req (.socket ctx ZMQ/REQ)]
+        (let [req (cljeromq/socket! ctx :request)]
           (try
-            (.connect req uri)
+            (cljeromq/connect! req uri)
             (try
-              (let [rep (.socket ctx ZMQ/REP)]
+              (let [rep (cljeromq/socket! ctx :reply)]
                 (try
-                  (.bind rep uri)
+                  (cljeromq/bind! rep uri)
                   (try
-                    (let [client (future (.send req "HELO")
-                                         (String. (.recv req)))]
-                      (let [greet (.recv rep)]
+                    (let [client (future (cljeromq/send! req "HELO")
+                                         (String. (cljeromq/recv! req)))]
+                      (let [greet (cljeromq/recv! rep)]
                         (is (= "HELO" (String. greet))))
-                      (.send rep "kthxbye")
+                      (cljeromq/send! rep "kthxbye")
                       (println "Waiting on unencrypted response")
                       (is (= @client "kthxbye"))
                       (println "Plain TCP OK"))
                     (finally
-                      (.unbind rep uri)))
+                      (cljeromq/unbind! rep uri)))
                   (finally
-                    (.close rep))))
+                    (cljeromq/close! rep))))
               (finally
-                (.disconnect req uri)))
-            (finally (.close req))))
+                (cljeromq/disconnect! req uri)))
+            (finally (cljeromq/close! req))))
         (finally
-          (.term ctx))))))
+          (cljeromq/terminate! ctx))))))
 
 (deftest create-curve-sockets-test
   (testing "Slap together basic server socket options"
-    (let [server-keys (ZCurveKeyPair/Factory)
-          server-public (.publicKey server-keys)
-          server-secret (.privateKey server-keys)
-          client-keys (ZCurveKeyPair/Factory)
-          client-public (.publicKey client-keys)
-          client-secret (.privateKey client-keys)
-          ctx (ZMQ/context 1)]
+    (let [server-keys (curve/new-key-pair)
+          server-public (:public server-keys)
+          server-secret (:private server-keys)
+          client-keys (curve/new-key-pair)
+          client-public (:public client-keys)
+          client-secret (:private client-keys)
+          ctx (cljeromq/context 1)]
       (println "Encrypted Router-Dealer test")
       (try
-        (let [router (.socket ctx ZMQ/ROUTER)]
+        (let [router (cljeromq/socket! ctx :router)]
           (try
             ;; python unit tests treat this as read-only
-            (.setLongSockopt router 47 1)   ; server?
+            (cljeromq/set-socket-option router 47 1)   ; server?
             ;; Most unit tests I see online set this.
             ;; The official suite doesn't.
             ;(.setBytesSockopt router 50 server-public) ; curve-server-key
             ;; Definitely don't need client keys
             ;(.setBytesSockopt router 48 client-public) ; curve-public-key
             ;(.setBytesSockopt router 49 client-secret) ; curve-secret-key
-            (.setBytesSockopt router 49 server-secret)
-            (.setIdentity router (.getBytes "SOMETHING"))  ; IDENT...doesn't seem to matter
-            (let [dealer (.socket ctx ZMQ/DEALER)]
+            (cljeromq/set-socket-option router 49 server-secret)
+            (cljeromq/set-identity router (.getBytes "SOMETHING"))  ; IDENT...doesn't seem to matter
+            (let [dealer (cljeromq/socket! ctx :dealer)]
               (try
-                (.setLongSockopt dealer 47 0)
-                ;(.setBytesSockopt dealer 49 server-secret)
+                (.set-socket-option dealer 47 0)
+                ;(.set-socket-option dealer 49 server-secret)
                 ;; Q: Do I actually need to set this?
-                (.setBytesSockopt dealer 50 server-public) ; curve-server-key
-                (.setBytesSockopt dealer 48 client-public) ; curve-public-key
-                (.setBytesSockopt dealer 49 client-secret) ; curve-secret-key
+                (cljeromq/set-socket-option dealer 50 server-public) ; curve-server-key
+                (cljeromq/set-socket-option dealer 48 client-public) ; curve-public-key
+                (cljeromq/set-socket-option dealer 49 client-secret) ; curve-secret-key
                 ;; Note that just getting this far is a fairly significant
                 ;; victory
-                (finally (.close dealer))))
-            (finally (.close router))))
-        (finally (.term ctx))))))
+                (finally (cljeromq/close! dealer))))
+            (finally (cljeromq/close! router))))
+        (finally (cljeromq/terminate! ctx))))))
 
 (deftest test-encrypted-req-rep
   "Translated directly from my java unit test"
-  (let [client-keys (ZCurveKeyPair/Factory)
-        server-keys (ZCurveKeyPair/Factory)
-        ctx (ZMQ/context 1)
-        in (.socket ctx ZMQ/REQ)]
+  (let [client-keys (curve/new-key-pair)
+        server-keys (curve/new-key-pair)
+        ctx (cljeromq/context 1)
+        in (cljeromq/socket! ctx :request)]
     (println "Encrypted req/rep inproc test")
-    (.makeIntoCurveClient in client-keys (.privateKey server-keys))
-    (.bind in "inproc://reqrep")
+    (curve/prepare-client-socket-for-server! in client-keys (:private server-keys))
+    (cljeromq/bind! in "inproc://reqrep")
 
-    (let [out (.socket ctx ZMQ/REP)]
-      (.makeIntoCurveServer out (.privateKey server-keys))
-      (.connect out "inproc://reqrep")
+    (let [out (cljeromq/socket! ctx :reply)]
+      (curve/make-socket-a-server! out (:private server-keys))
+      (cljeromq/connect! out "inproc://reqrep")
 
       (dotimes [n 10]
         (let [req (.getBytes (str "request" n))
               rep (.getBytes (str "reply" n))]
           (comment (println n))
-          (let [success (.send in req 0)]
+          (let [success (cljeromq/send! in req 0)]
             (when-not success
               (println "Sending request returned:" success)
+              ;; Q: Is there any point to this approach now?
+              ;; If the send! failed, it really should throw an exception
               (is (or false true))))
-          (let [response (.recv out 0)]
+          (let [response (cljeromq/recv! out 0)]
             (is (= (String. req) (String. response))))
 
-          (let [success (.send out (String. rep))]
+          (let [success (cljeromq/send! out (String. rep))]
             (when-not success
               (println "Error sending Reply: " success)
+              ;; Another absolutely meaningless test
               (is (or false true))))
-          (let [response (.recv in 0)]
+          (let [response (cljeromq/recv! in 0)]
             (is (= (String. rep) (String. response))))))))
   (println "Simple CURVE checked"))
 
 (deftest test-encrypted-push-pull
   "Translated directly from my java unit test"
-  (let [client-keys (ZCurveKeyPair/Factory)
-        server-keys (ZCurveKeyPair/Factory)
-        ctx (ZMQ/context 1)
-        in (.socket ctx ZMQ/PUSH)]
+  (let [client-keys (curve/new-key-pair)
+        server-keys (curve/new-key-pair)
+        ctx (cljeromq/context 1)
+        in (cljeromq/socket! ctx :push)]
     (println "Encrypted push/pull inproc test")
-    (.makeIntoCurveClient in client-keys (.privateKey server-keys))
-    (.bind in "inproc://reqrep")
+    (curve/prepare-client-socket-for-server! in client-keys (:private server-keys))
+    (cljeromq/bind! in "inproc://reqrep")
 
-    (let [out (.socket ctx ZMQ/PULL)]
-      (.makeIntoCurveServer out (.privateKey server-keys))
-      (.connect out "inproc://reqrep")
+    (let [out (cljeromq/socket! ctx :pull)]
+      (curve/make-socket-a-server! out (:private server-keys))
+      (cljeromq/connect! out "inproc://reqrep")
 
       (dotimes [n 10]
         (let [req (.getBytes (str "request" n))
@@ -168,21 +172,21 @@
 
 (deftest test-encrypted-router-dealer
   "Translated directly from my java unit test"
-  (let [client-keys (ZCurveKeyPair/Factory)
-        server-keys (ZCurveKeyPair/Factory)
-        ctx (ZMQ/context 1)
-        in (.socket ctx ZMQ/DEALER)
+  (let [client-keys (curve/new-key-pair)
+        server-keys (curve/new-key-pair)
+        ctx (cljeromq/context 1)
+        in (cljeromq/socket! ctx :dealer)
         id-string "basic router/dealer encryption check"
         id-byte-array (byte-array (map (comp byte int) id-string))
         id-bytes (bytes id-byte-array)]
     (println "Encrypted router-dealer inproc test")
-    (.makeIntoCurveClient in client-keys (.privateKey server-keys))
-    (.setIdentity in id-byte-array)
-    (.bind in "inproc://reqrep")
+    (curve/prepare-client-socket-for-server! in client-keys (:private server-keys))
+    (cljeromq/set-identity! in id-byte-array)
+    (cljeromq/bind! in "inproc://reqrep")
 
-    (let [out (.socket ctx ZMQ/ROUTER)]
-      (.makeIntoCurveServer out (.privateKey server-keys))
-      (.connect out "inproc://reqrep")  ; Much more realistic for this to bind.
+    (let [out (cljeromq/socket! ctx :router)]
+      (curve/make-socket-a-server! out (:private server-keys))
+      (cljeromq/connect! out "inproc://reqrep")  ; Much more realistic for this to bind.
 
       (dotimes [n 10]
         (let [req (.getBytes (str "request" n))
@@ -194,9 +198,9 @@
               (println "Sending request returned:" success)
               (is false)))
 
-          (let [id (.recv out 0)
-                delimeter (.recv out 0)
-                response (.recv out 0)
+          (let [id (cljeromq/recv! out 0)
+                delimeter (cljeromq/recv! out 0)
+                response (cljeromq/recv! out 0)
                 s-req (String. req)
                 s-rsp (String. response)]
             (when-not (= s-req s-rsp)
@@ -205,9 +209,9 @@
                        " from " (String. id)))
             (is (= s-req s-rsp))
 
-            (comment) (.sendMore out (String. id)))
-          (let [_ (.sendMore out "")
-                success (.send out (String. rep))]
+            (comment) (cljeromq/send-more out (String. id)))
+          (let [_ (cljeromq/send-more out "")
+                success (cljeromq/send! out (String. rep))]
             (when-not success
               (println "Error sending Reply: " success)
               (is false)))
@@ -219,17 +223,17 @@
   (println "Dealer<->Router CURVE checked"))
 
 (deftest test-encrypted-router-dealer-over-tcp
-  (let [client-keys (ZCurveKeyPair/Factory)
-        server-keys (ZCurveKeyPair/Factory)
-        ctx (ZMQ/context 1)
-        in (.socket ctx ZMQ/DEALER)]
+  (let [client-keys (curve/new-key-pair)
+        server-keys (curve/new-key-pair)
+        ctx (cljeromq/context 1)
+        in (cljeromq/socket! ctx :dealer)]
     (println "Encrypted router-dealer TCP test")
-    (.makeIntoCurveClient in client-keys (.privateKey server-keys))
-    (.bind in "tcp://*:54398")
+    (curve/prepare-client-socket-for-server! in client-keys (:private server-keys))
+    (cljeromq/bind! in "tcp://*:54398")
 
-    (let [out (.socket ctx ZMQ/ROUTER)]
-      (.makeIntoCurveServer out (.privateKey server-keys))
-      (.connect out "tcp://127.0.0.1:54398")
+    (let [out (cljeromq/socket! ctx :router)]
+      (curve/make-socket-a-server! out (:private server-keys))
+      (cljeromq/connect! out "tcp://127.0.0.1:54398")
 
       (dotimes [n 10]
         (let [req (.getBytes (str "request" n))
@@ -261,24 +265,24 @@
 
 (deftest test-unencrypted-router-dealer-over-tcp
   "Translated directly from the jzmq unit test"
-  (let [ctx (ZMQ/context 1)
-        in (.socket ctx ZMQ/DEALER)]
+  (let [ctx (cljeromq/context 1)
+        in (cljeromq/socket! ctx :dealer)]
     (println "Unencrypted router/dealer over TCP")
-    (.bind in "tcp://*:54398")
+    (cljeromq/bind! in "tcp://*:54398")
 
-    (let [out (.socket ctx ZMQ/ROUTER)]
-      (.connect out "tcp://127.0.0.1:54398")
+    (let [out (cljeromq/socket! ctx :router)]
+      (cljeromq/connect! out "tcp://127.0.0.1:54398")
 
       (dotimes [n 10]
         (let [req (.getBytes (str "request" n))
               rep (.getBytes (str "reply" n))]
           (comment (println n))
-          (let [success (.send in req 0)]
+          (let [success (cljeromq/send! in req 0)]
             (when-not success
               (println "Sending request returned:" success)
               (is (or false true))))
           (println "Waiting for message from dealer to arrive at router")
-          (let [response (.recv out 0)]
+          (let [response (cljeromq/recv! out 0)]
             (println "Router received REQ")
             (let [s-req (String. req)
                   s-res (String. response)]
@@ -287,54 +291,55 @@
                          "Received '" s-res "' which is " (count response) " bytes long")
                 (is (= s-req s-res)))))
 
-          (let [success (.send out (String. rep))]
+          (let [success (cljeromq/send! out (String. rep))]
             (when-not success
               (println "Error sending Reply: " success)
               (is false)))
-          (let [response (.recv in 0)]
+          (let [response (cljeromq/recv! in 0)]
             (is (= (String. rep) (String. response)))))))))
 
 (deftest minimal-curveless-communication-test
   (testing "Because communication is boring until the principals can swap messages"
     ;; Both threads block at receiving. Have verified that this definitely works in python
-    (let [ctx (ZMQ/context 1)]
+    (let [ctx (cljeromq/context 1)]
       (println "Minimal rep/dealer unencrypted over TCP")
       (try
-        (let [router (.socket ctx ZMQ/REP)]
+        (let [router (cljeromq/socket! ctx :reply)]
           (try
             (let [localhost "tcp://127.0.0.1"
                   port (.bindToRandomPort router localhost)
                   url (str localhost ":" port)]
               (try
                 (println "Doing unencrypted comms over '" url "'")
-                (let [dealer (.socket ctx ZMQ/DEALER)]
+                (let [dealer (cljeromq/socket! ctx :dealer)]
                   (try
-                    (.connect dealer url)
+                    (cljeromq/connect! dealer url)
                     (try
                       (let [resp (future (println "Dealer: sending greeting")
-                                         (is (.sendMore dealer ""))
-                                         (is (.send dealer "OLEH"))
+                                         (is (cljeromq/send-more! dealer ""))
+                                         (is (cljeromq/send! dealer "OLEH"))
                                          (println "Dealer: greeting sent")
-                                         (let [identity (String. (.recv dealer))
-                                               result (String. (.recv dealer))]
+                                         (let [identity (String. (cljeromq/recv! dealer))
+                                               result (String. (cljeromq/recv! dealer))]
                                            (println "Dealer: received " result
                                                     " from '" identity "'")
                                            result))]
                         (println "Router: Waiting on encrypted message from dealer")
-                        (let [greet (.recv router)]  ;; TODO: Add a timeout
+                        (let [greet (cljeromq/recv! router)]  ;; TODO: Add a timeout
                           (is (= "OLEH" (String. greet)))
                           (println "Router: Encrypted greeting decrypted")
-                          (is (.send router "cool"))
+                          (is (cljeromq/send! router "cool"))
                           (println "Router: Response sent")
                           (is (= @resp "cool"))
                           (println "Unencrypted Dealer<->REP: Handshook")))
-                      (finally (.disconnect dealer url)))
-                    (finally (.close dealer))))
-                (finally (.unbind router url))))
-            (finally (.close router))))
-        (finally (.term ctx))))))
+                      (finally (cljeromq/disconnect! dealer url)))
+                    (finally (cljeromq/close! dealer))))
+                (finally (cljeromq/unbind! router url))))
+            (finally (cljeromq/close! router))))
+        (finally (cljeromq/terminate! ctx))))))
 
 (comment
+  ;;; This just became a lot more obsolete
   (deftest minimal-curve-communication-test
     (testing "Because communication is boring until the principals can swap messages"
       ;; Both threads block at receiving. Have verified that this definitely works in python
