@@ -198,7 +198,7 @@ In the previous incarnation, everything except tcp seemed to work"
   (dotimes [n 10]
     (let [req (.getBytes (str "request" n))
           rep (.getBytes (str "reply" n))]
-      (comment (println n))
+      (comment) (println n)
       (let [_ (cljeromq/send-more! in nil)
             success (cljeromq/send! in req 0)]
         ;; Actually, as long as it didn't throw an exception,
@@ -265,8 +265,10 @@ In the previous incarnation, everything except tcp seemed to work"
         ctx (cljeromq/context 2)
         in (cljeromq/socket! ctx :dealer)]
     (try
-      (println "(not) Encrypted router-dealer TCP test")
-      (curve/prepare-client-socket-for-server! in client-keys (:private server-keys))
+      (println "Encrypted router-dealer TCP test")
+      ;; Q: How is this working?
+      ;; (i.e. Look at the key I'm using here
+      (curve/prepare-client-socket-for-server! in client-keys (:public server-keys))
       (cljeromq/bind! in "tcp://*:54398")
       (try
         (let [out (cljeromq/socket! ctx :router)]
@@ -338,6 +340,90 @@ In the previous incarnation, everything except tcp seemed to work"
                     (finally (cljeromq/close! dealer))))
                 (finally (cljeromq/unbind! router url))))
             (finally (cljeromq/close! router))))
+        (finally (cljeromq/terminate! ctx))))))
+
+(deftest check-zap
+  (testing "Principals should have a clue who's whom"
+    (let [server-keys (curve/new-key-pair)
+          server-public (:public server-keys)
+          server-private (:private server-keys)
+          client-keys (curve/new-key-pair)
+          client-public (:public client-keys)
+          client-private (:private client-keys)
+          ctx (cljeromq/context 1)]
+      (try
+        (let [zap-handler (cljeromq/socket! ctx :rep)]
+          (try
+            (cljeromq/set-time-out! zap-handler 5000)
+            (cljeromq/bind! zap-handler "inproc://zeromq.zap.01")
+            (try
+              (let [zap-future
+                    (future
+                      (try
+                        (loop [version (cljeromq/recv! zap-handler)]  ; TODO: Really needs a timeout
+                          (println "ZAP validation request received")
+                          (let [sequence (cljeromq/recv! zap-handler)
+                                domain (cljeromq/recv! zap-handler)
+                                address (cljeromq/recv! zap-handler)
+                                identity (cljeromq/recv! zap-handler)
+                                mechanism (cljeromq/recv! zap-handler)]
+                            (println "ZAP:\n" (String. version) "\n"
+                                     (String. sequence) "\n"
+                                     (String. domain) "\n"
+                                     (String. address) "\n"
+                                     (String. identity) "\n"
+                                     (String. mechanism "\n"))
+                            ;; Need to respond with the sequence, b"200 and b"OK"
+                            ;; (based on the python handler)
+                            (cljeromq/send-more! zap-handler "1.0")
+                            (cljeromq/send-more! zap-handler sequence)
+                            (cljeromq/send-more! zap-handler "200")
+                            (cljeromq/send-more! zap-handler "OK")
+                            (cljeromq/send-more! zap-handler "user id")
+                            (cljeromq/send! zap-handler "metadata isn't used"))
+                          ;; Anything real should loop until we get a signal to stop
+                          (when false
+                            (recur (.recv zap-handler))))
+                        (catch ExceptionInfo ex
+                          (let [details (.getData ex)]
+                            (println (keys details))
+                            (is false "What does EAGAIN look like here?")))))]
+                (let [server (cljeromq/socket! ctx :rep)]
+                  (try
+                    (curve/make-socket-a-server! server server-private)
+                    (let [localhost "tcp://127.0.0.1"
+                          port (cljeromq/bind-random-port! server localhost)
+                          url (str localhost ":" port)
+                          client (cljeromq/socket! ctx :dealer)]
+                      (try
+                        (curve/prepare-client-socket-for-server! client client-keys server-public)
+                        (cljeromq/connect! client url)
+                        (try
+                          (let [server-thread
+                                (future
+                                  (println "Server: Waiting on encrypted message from dealer")
+                                  (let [greet (cljeromq/recv! server)]
+                                    (is (= "OLEH" (String. greet)))
+                                    (println "Server: Encrypted greeting decrypted")
+                                    (is (cljeromq/send! server "cool"))
+                                    (println "Server: Response sent"))
+                                  true)]
+                            (println "Client: sending greeting")
+                            (cljeromq/send-more! client nil)
+                            (cljeromq/send! client "OLEH")
+                            (println "Client: Greeting Sent")
+                            (cljeromq/recv! client)
+                            (is (cljeromq/has-more? client) "Should have had message payload after NULL separator")
+                            (let [response (String. (cljeromq/recv! client))]
+                              (is (= "cool" response)))
+                            (is @server-thread "That did exit, didn't it?"))
+                          (finally (cljeromq/disconnect! client url)))
+                        (finally (cljeromq/close! client))))
+                    (finally (cljeromq/close! server)))))
+              (finally
+                ;; TODO: Make this happen
+                (comment (cljeromq/unbind! zap-handler "inproc://zeromq.zap.01"))))
+            (finally (cljeromq/close! zap-handler))))
         (finally (cljeromq/terminate! ctx))))))
 
 (comment

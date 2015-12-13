@@ -59,6 +59,7 @@ Although, really, that's almost pedantic."
                     :identity ZMQ/IDENTITY                    ; 5
                     :linger ZMQ/LINGER
                     :receive-more ZMQ/RCVMORE                 ; 13
+                    :receive-time-out ZMQ/RCVTIMEO
                     :router-mandatory ZMQ/ROUTER_MANDATORY
                     :subscribe ZMQ/SUBSCRIBE                  ; 6
                     :unsubscribe ZMQ/UNSUBSCRIBE              ; 7

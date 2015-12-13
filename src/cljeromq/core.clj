@@ -290,6 +290,14 @@ If SNDHWM without ZMQ_DONTWAIT, will block."
     on :- s/Bool]
    (set-socket-option! s :router-mandatory on)))
 
+(s/defn set-time-out!
+  "-1 (default): infinite
+0: always return immediately
+n: in milliseconds"
+  [s :- Socket
+   timeout :- s/Int]
+  (set-socket-option! s :receive-time-out timeout))
+
 (s/defn close!
   "You're done with a socket."
   [s :- Socket]
