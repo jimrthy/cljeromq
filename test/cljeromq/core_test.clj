@@ -31,15 +31,19 @@
 (deftest inproc-req-rep-handshake
   []
   (let [uri "inproc://a-test-1"
-        [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
+        [ctx req rep] (setup uri :req :rep)]
     (try
       (let [client (future (core/send! req "HELO")
+                           (println "Initial request sent in background thread. Awaiting response")
                            (String. (core/recv! req)))]
         (let [greet (core/recv! rep)]
+          (println "Initial handshake received from background thread")
           (is (= (String. greet) "HELO")
               "String transmission failed"))
         (core/send! rep "kthxbye")
-        (is (= @client "kthxbye")))
+        (println "Reply sent to background thread")
+        (is (= @client "kthxbye"))
+        (println "Background thread exited"))
       (finally
         ;; Can't unbind inproc socket
         ;; This is actually Bug #949 in libzmq.
@@ -49,17 +53,17 @@
           (core/unbind! rep uri)
           (is false "0mq bug got fixed")
           (catch ExceptionInfo ex
-            (is (= ex "No such file or directory"))))
+            (is (= (-> ex .getData :error-message) "No such file or directory"))))
         (teardown {:context ctx
                    :client req
                    :server rep
                    :uri uri
                    :unbind-server? false})))))
 
-(deftest tcp-req-req-handshake
+(deftest tcp-req-rep-handshake
   []
   (let [uri "tcp://127.0.0.1:8709"
-        [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
+        [ctx req rep] (setup uri :req :rep)]
     (try
       (let [client (future (core/send! req "HELO")
                            (String. (core/recv! req)))]
@@ -150,22 +154,27 @@
       (let [url  "tcp://localhost:10101"]
         (println "Binding receiver")
         (core/bind! receiver url)
-        (println "Setting up sender")
-        (core/with-socket [sender ctx :req]
-          (println "Connecting sender")
-          (core/connect! sender url)
+        (try
+          (println "Setting up sender")
+          (core/with-socket [sender ctx :req]
+            (println "Connecting sender")
+            (core/connect! sender url)
 
-          (is (= 0 0) "Connecting sockets broke reality")
+            (try
+              (is (= 0 0) "Connecting sockets broke reality")
 
-          (let [msg "abcxYz1"]
-            (core/send! sender msg)
-            (let [result (core/recv! receiver)]
-              (is (= msg result) "Echoing failed")))
+              (let [msg "abcxYz1"]
+                (core/send! sender msg)
+                (let [result (core/recv! receiver)]
+                  (is (= msg result) "Echoing failed")))
 
-          (let [msg :something]
-            (core/send! receiver msg)
-            (let [result (core/recv! sender)]
-              (is (= msg result) "Echoing keyward failed"))))))))
+              (let [msg :something]
+                (core/send! receiver msg)
+                (let [result (core/recv! sender)]
+                  (is (= msg result) "Echoing keyward failed")))
+              (finally (core/disconnect! sender url))))
+          (finally
+            (core/unbind! receiver url)))))))
 
 (deftest check-unbinding []
   (core/with-context [ctx 1]

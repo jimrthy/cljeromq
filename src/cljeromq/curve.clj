@@ -10,7 +10,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Schema
 
-;;; byte-array-type should be defined in here
+;;; byte-array-type should not be defined in here
 ;;; TODO: Move somewhere more generally sharable
 (s/def byte-array-type (Class/forName "[B"))
 
@@ -20,17 +20,19 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Internal
 
-(def iso-8859 StandardCharsets/ISO_8859_1)
+(def iso-8859
+  "Honestly, should probably be using ASCII"
+  StandardCharsets/ISO_8859_1)
 
 (s/defn char-buffer->byte-array :- byte-array-type
   "Really intended for 0mq curve keys. Which, really, start as ASCII"
   [src]
-  (.encode iso-8859 src))
+  (.array (.encode iso-8859 src)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Public
 
-(s/defn new-key-pair :- key-pair
+(s/defn ^:always-validate new-key-pair :- key-pair
   "Return a map of new public/private keys in CharBuffers.
 It's very tempting to return them as Strings instead, because
 that seems like it would be easiest to deal with. But I
@@ -73,7 +75,7 @@ the public key."
   (cljeromq/set-socket-option! sock :curve-server true)
   (cljeromq/set-socket-option! sock :curve-private-key private-key))
 
-(s/defn prepare-client-socket-for-server!
+(s/defn ^:always-validate prepare-client-socket-for-server!
   "Adjust socket options to make it suitable for connecting as
 a client to a server identified by server-key
 TODO: I'm mixing/matching JNA and JNI.
@@ -81,7 +83,6 @@ Which seems like a truly horrid idea."
   [sock :- cljeromq/Socket
    {:keys [public private :as client-key-pair]} :- key-pair
    server-public-key :- byte-array-type]
-  (comment (.makeIntoCurveClient sock (ZCurveKeyPair. public private) server-public-key))
   (cljeromq/set-socket-option! sock :curve-server false)
   (cljeromq/set-socket-option! sock :curve-server-key server-public-key)
   (cljeromq/set-socket-option! sock :curve-public-key public)

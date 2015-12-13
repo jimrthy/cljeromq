@@ -50,6 +50,7 @@ Although, really, that's almost pedantic."
 
    :socket-options {;; the next two are for the client
                     :curve-public-key ZMQ/CURVE_PUBLICKEY     ; 48
+                    :curve-private-key ZMQ/CURVE_SECRETKEY     ; 49
                     :curve-secret-key ZMQ/CURVE_SECRETKEY     ; 49
                     :curve-server ZMQ/CURVE_SERVER            ; 47 -- set to 1 for yes, 0 for no
                     ;; The server just needs the private key
@@ -119,15 +120,22 @@ Although, really, that's almost pedantic."
 of/individual keyword into a logical-or'd flag to control
 socket options."
   [flags :- keyword-or-seq]
-  (if-let [result (if (or (seq? flags)
-                          (vector? flags))
-                    (reduce bit-or
-                            0
-                            (map control->const flags))
-                    (control->const flags))]
-    result
-    (throw (ex-info "NULL flags specified"
-                    {:requested flags}))))
+  (if (integer? flags)
+    flags
+    (if-let [result (if (or (seq? flags)
+                            (vector? flags))
+                      (reduce (fn [acc x]
+                                (if x
+                                  (bit-or acc x)
+                                  acc))
+                              0
+                              (map control->const flags))
+                      (control->const flags))]
+      result
+      ;; Actually, this is totally legit
+      #_(throw (ex-info "NULL flags specified"
+                      {:requested flags}))
+      0)))
 
 (s/defn sock->const :- s/Int
   "Convert a socket keyword to a ZMQ constant"

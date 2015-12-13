@@ -149,13 +149,16 @@ to make swapping back and forth seamless."
   ;; Q: What's up?
   (let [real-option (if (keyword? option)
                       (K/option->const option)
-                      option)]
-    (wrap-0mq-boolean-fn-call #_(ZMQ/zmq_setsockopt s real-option value)
+                      option)
+        ;; This check for boolean? is a pending PR into clojure.core
+        ;; TODO: Move it into some sort of util ns where others can
+        ;; take advantage
+        real-value (if (instance? java.lang.Boolean value)
+                     (if value 1 0)
+                     value)]
+    (wrap-0mq-boolean-fn-call #_(ZMQ/zmq_setsockopt s real-option real-value)
                               (fn []
-                                (println (str "Setting socket option "
-                                              option ", " real-option
-                                              " to " value ", a " (class value)))
-                                (ZMQ/zmq_setsockopt s real-option value))
+                                (ZMQ/zmq_setsockopt s real-option real-value))
                               "Setting socket option failed"
                               {:socket s
                                :option option
@@ -177,7 +180,7 @@ to make swapping back and forth seamless."
     error-message :- s/Str
     base-error-map :- {s/Any s/Any}]
    (let [real-option (K/option->const option)]
-     (wrap-0mq-numeric-fn-call #(ZMQ/zmq_getsockopt_long sock option)
+     (wrap-0mq-numeric-fn-call #(ZMQ/zmq_getsockopt_long sock real-option)
                        error-message
                        base-error-map)))
   ([sock :- Socket
@@ -307,7 +310,7 @@ up the server side of an interaction."
    url :- s/Str]
   (wrap-0mq-boolean-fn-call
    #(ZMQ/zmq_bind socket url)
-   "Binding Failure"
+   (str "Unable to bind socket " socket " to " url)
    {:socket socket
     :url url}))
 
@@ -317,6 +320,12 @@ up the server side of an interaction."
 Returns the port number"
     ([socket :- Socket
       endpoint :- s/Str]
+     ;; I think these are the ephemeral ports defined for some system
+     ;; or other
+     ;; Q: Is this something standard?
+     ;; More important Q: Is this wise?
+     ;; Seems like it would be better to pick something in the range up
+     ;; to the ephemerals
      (let [port (bind-random-port! socket endpoint 49152 65535)]
        (println (str "Managed to bind to port '" port "'"))
        port))
@@ -331,7 +340,13 @@ Returns the port number"
      ;; TODO: Implement retries on failure
      (let [range (- max min)
            port (+ (rand-int range) min)]
-       (bind! socket (str endpoint ":" port)))))
+       (if (bind! socket (str endpoint ":" port))
+         port
+         (throw (add-error-detail (str "Failed to bind random port: " port)
+                                  {:socket socket
+                                   :endpoint endpoint
+                                   :min min
+                                   :max max}))))))
 
 (s/defn unbind!
   [socket :- Socket
@@ -499,7 +514,9 @@ Returns the port number"
    (let [flags (if (seq? flags)
                  flags
                  [flags])]
-     (send! socket message (conj flags :send-more)))))
+     (send! socket message (conj flags :send-more))))
+  ([socket message]
+   (send! socket message :send-more)))
 
 (s/defn send-partial!
   "I'm seeing this as a way to send all the messages in an envelope, except
