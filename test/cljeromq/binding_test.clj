@@ -279,44 +279,66 @@
 
 (deftest test-unencrypted-router-dealer-over-tcp
   "Translated directly from the jzmq unit test"
-  (throw (RuntimeException. "Start Here"))
   (let [ctx (cljeromq/context 1)
         in (cljeromq/socket! ctx :dealer)]
-    (println "Unencrypted router/dealer over TCP")
-    (cljeromq/bind! in "tcp://*:54398")
+    (try
+      (println "Unencrypted router/dealer over TCP")
+      (cljeromq/bind! in "tcp://*:54398")
 
-    (let [out (cljeromq/socket! ctx :router)]
-      (cljeromq/connect! out "tcp://127.0.0.1:54398")
+      (try
+        (let [out (cljeromq/socket! ctx :router)]
+          (is out "Router creation failed")
+          (cljeromq/set-router-mandatory! out)
+          (cljeromq/connect! out "tcp://127.0.0.1:54398")
+          (try
+            (dotimes [n 10]
+              (let [req (.getBytes (str "request" n))
+                    rep (.getBytes (str "reply" n))]
+                (comment )(println "Top of loop: " n)
+                (let [initial-success (cljeromq/send-more! in (byte-array 0) 0) ; NULL separator from non-address frame
+                      success (cljeromq/send! in req 0)]
+                  (when-not success
+                    (println "Sending request returned:" success)
+                    (is false "That should have thrown an exception")))
+                (println "Waiting for message from dealer to arrive at router")
+                (let [address-response-frame (cljeromq/recv! out 0)
+                      _ (println (str "Address frame received: " address-response-frame))
+                      null-separator-frame (cljeromq/recv! out 0)
+                      _ (println (str "Null separator received: " null-separator-frame))
+                      response (cljeromq/recv! out 0)]
+                  (println (str "Router received REQ: " response))
+                  (let [s-req (String. req)
+                        s-res (String. response)]
+                    (when-not (= s-req s-res)
+                      (println "Sent '" s-req "' which consists of " (count req) " bytes\n"
+                               "Received '" s-res "' which is " (count response) " bytes long")
+                      (is (= s-req s-res))))
 
-      (dotimes [n 10]
-        (let [req (.getBytes (str "request" n))
-              rep (.getBytes (str "reply" n))]
-          (comment (println n))
-          (let [initial-success (cljeromq/send-more! in [] 0) ; NULL separator from non-address frame
-                success (cljeromq/send! in req 0)]
-            (when-not success
-              (println "Sending request returned:" success)
-              (is false "This should have thrown an exception")))
-          (println "Waiting for message from dealer to arrive at router")
-          (let [address-response-frame (cljeromq/recv! out 0)
-                _ (println (str "Address frame received: " address-response-frame))
-                null-separator-frame (cljeromq/recv! out 0)
-                _ (println (str "Null separator received: " null-separator-frame))
-                response (cljeromq/recv! out 0)]
-            (println (str "Router received REQ: " response))
-            (let [s-req (String. req)
-                  s-res (String. response)]
-              (when-not (= s-req s-res)
-                (println "Sent '" s-req "' which consists of " (count req) " bytes\n"
-                         "Received '" s-res "' which is " (count response) " bytes long")
-                (is (= s-req s-res)))))
+                  ;; Send response back from router
+                  (println "ACK'ing from router back to dealer")
+                  (cljeromq/send-more! out address-response-frame)
+                  (println "Sending NULL address separator")
+                  (cljeromq/send-more! out [])
 
-          (let [success (cljeromq/send! out (String. rep))]
-            (when-not success
-              (println "Error sending Reply: " success)
-              (is false)))
-          (let [response (cljeromq/recv! in 0)]
-            (is (= (String. rep) (String. response)))))))))
+                  (let [msg (String. rep)
+                        _ (println "And then sending the reply: " msg)
+                        success (cljeromq/send! out msg)]
+                    (is success "Should have thrown an exception on failure to send reply")))
+
+                ;; Dealer receives that response
+                (println "Waiting for ACK from Router at Dealer")
+                (let [null-separator (cljeromq/recv! in 0)
+                      _ (println "Dealer Received NULL separator frame: " null-separator)
+                      response (cljeromq/recv! in 0)]
+                  (is (= (String. rep) (String. response))))))
+            (finally
+              (cljeromq/disconnect! out "tcp://127.0.0.1:54398")
+              (cljeromq/close! out))))
+        (finally
+          (cljeromq/unbind! in "tcp://*:54398")))
+      (finally
+        (cljeromq/close! in)
+        (cljeromq/terminate! ctx)))))
 
 (deftest minimal-curveless-communication-test
   (testing "Because communication is boring until the principals can swap messages"

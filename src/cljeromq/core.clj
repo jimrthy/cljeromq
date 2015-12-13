@@ -1,19 +1,27 @@
-;; Really need to add the license...this project is LGPL.
-;; Q: Why?
-;; A: Because the most restrictive license on which it
-;; depends is currently zeromq.zmq, and that's its license.
-;; This probably isn't strictly required, and it gets finicky
-;; when it comes to the EPL...I am going to have to get an
-;; opinion from the FSF (and probably double-check with
-;; the 0mq people) to verify how this actually works in
-;; practice.
+;;;; Really need to add a license.
+;;;; I really thought that this needed to be LGPL,
+;;;; since that's 0mq's license.
 
-;; TODO: What are the ramifications of using libraries that
-;; are both EPL and LGPL? AIUI, just using the library
-;; doesn't affect other libraries, unless the one you're using
-;; is GPL. Even then, that's supposed to be about code that's
-;; linked into your exe. That definitely seems like shaky
-;; ground. Then again, so does having this be LGPL.
+;;;; But the GPL is really only viral with static linking,
+;;;; and LGPL really isn't even that.
+
+;;;; Neither is compatible with the Eclipse license, which
+;;;; covers essentially everything in the clojure community.
+;;;; Which means this will never get used by anyone else
+;;;; if its license isn't in the same ballpark.
+
+;;;; GNU licenses are most definitely and specifically not
+;;;; compatible with the Eclipse license.
+
+;;;; Worst case scenario seems to be that it's illegal to
+;;;; redistribute this. Which may make it totally useless
+;;;; except for internal projects.
+
+;;;; This is a challenging question.
+
+;;;; Note that the zmq-jni license on which this is based
+;;;; is released under the Mozilla license, which may be
+;;;; more tractable.
 
 (ns cljeromq.core
   "This is where the basic socket functionality happens.
@@ -471,13 +479,13 @@ Returns the port number"
 
 (defmethod send! String
   ([socket ^String message flags]
-     ;; FIXME: Debug only
-     (comment (println "Sending string:\n" message))
-     ;; My original plan was that this would convert the string
-     ;; to clojure.core$bytes, so it would call the method above
-     (send! socket (.getBytes message) flags))
+   ;; FIXME: Debug only
+   (comment) (println "Sending string:\n" message "\nwith flags: " flags)
+   ;; My original plan was that this would convert the string
+   ;; to clojure.core$bytes, so it would call the method above
+   (send! socket (.getBytes message) flags))
   ([socket ^String message]
-     (io! (send! socket message :dont-wait))))
+   (io! (send! socket message :dont-wait))))
 
 (defmethod send! byte-array-class
   ([socket message]
