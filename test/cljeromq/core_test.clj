@@ -115,26 +115,27 @@
             (let [received (core/recv! receiver)]
               (is (= received msg) "Transmitting sequence")))
 
-          (comment (future-fact "Transmit integer"
-                                (let [msg 1000]
-                                  (core/send! receiver msg)
-                                  (let [received (core/raw-recv! sender)]
-                                    received => msg))))
+          (let [msg 1000]
+            (core/send! receiver msg)
+            (let [received (core/raw-recv! sender)]
+              (is (= received msg))))
 
-          (comment (future-fact "Transmit float"
-                                (let [msg Math/PI]
-                                  (core/send! sender msg)
-                                  (let [received (core/raw-recv! receiver)]
-                                    received => msg))))
+          (let [msg Math/PI]
+            (core/send! sender msg)
+            (let [received (core/raw-recv! receiver)]
+              ;; Honestly, this probably shouldn't round-trip correctly
+              (is (= received msg))))
 
-          (comment (future-fact "Transmit big integer"
-                                (let [msg 1000M]
-                                  (core/send! receiver msg)
-                                  (let [received (core/raw-recv sender)]
-                                    received => msg))))
+          (comment (future-fact "Transmit big integer"))
+          (let [msg 1000M]
+            (core/send! receiver msg)
+            (let [received (core/raw-recv! sender)]
+              (is (= received msg))))
 
           (comment (future-fact "Transmit multiple sequences"
                                 ;; Q: What could this look like?
+                                ;; A: Well, using send-more! seems like the
+                                ;; most obvious approach
                                 ))
           (finally (core/unbind! receiver url)
                    (core/close! receiver)

@@ -118,33 +118,46 @@
         server-keys (curve/new-key-pair)
         ctx (cljeromq/context 1)
         in (cljeromq/socket! ctx :req)]
-    (println "Encrypted req/rep inproc test")
-    (curve/prepare-client-socket-for-server! in client-keys (:public server-keys))
-    (cljeromq/bind! in "inproc://reqrep")
+    (try
+      (println "Encrypted req/rep inproc test")
+      (curve/prepare-client-socket-for-server! in client-keys (:public server-keys))
+      (cljeromq/bind! in "inproc://reqrep")
 
-    (let [out (cljeromq/socket! ctx :rep)]
-      (curve/make-socket-a-server! out (:private server-keys))
-      (cljeromq/connect! out "inproc://reqrep")
+      (try
+        (let [out (cljeromq/socket! ctx :rep)]
+          (try
+            (curve/make-socket-a-server! out (:private server-keys))
+            (cljeromq/connect! out "inproc://reqrep")
 
-      (dotimes [n 10]
-        (let [req (.getBytes (str "request" n))
-              rep (.getBytes (str "reply" n))]
-          (comment (println n))
-          (let [success (cljeromq/send! in req 0)]
-            (when-not success
-              (println "Sending request returned:" success)
-              ;; Q: Is there any point to this approach now?
-              (is false "Should have thrown an exception on failure")))
-          (let [response (cljeromq/recv! out 0)]
-            (is (= (String. req) (String. response))))
+            (try
+              (dotimes [n 10]
+                (let [req (.getBytes (str "request" n))
+                      rep (.getBytes (str "reply" n))]
+                  (comment (println n))
+                  (let [success (cljeromq/send! in req 0)]
+                    (when-not success
+                      (println "Sending request returned:" success)
+                      ;; Q: Is there any point to this approach now?
+                      (is false "Should have thrown an exception on failure")))
+                  (let [response (cljeromq/recv! out 0)]
+                    (is (= (String. req) (String. response))))
 
-          (let [success (cljeromq/send! out (String. rep))]
-            (when-not success
-              (println "Error sending Reply: " success)
-              ;; Another absolutely meaningless test
-              (is (or false true))))
-          (let [response (cljeromq/recv! in 0)]
-            (is (= (String. rep) (String. response)))))))))
+                  (let [success (cljeromq/send! out (String. rep))]
+                    (when-not success
+                      (println "Error sending Reply: " success)
+                      ;; Another absolutely meaningless test
+                      (is (or false true))))
+                  (let [response (cljeromq/recv! in 0)]
+                    (is (= (String. rep) (String. response))))))
+              (finally (cljeromq/disconnect! out "inproc://reqrep")))
+            (finally (cljeromq/close! out))))
+        (finally
+          ;; Don't do this if we're using anything earlier than 4.1.0
+          ;; Which I should really quit trying to use very soon
+          (comment (cljeromq/unbind! in "inproc://reqrep"))))
+      (finally
+        (cljeromq/close! in)
+        (cljeromq/terminate! ctx)))))
 
 (deftest test-encrypted-push-pull
   "Translated directly from my java unit test"
@@ -152,22 +165,70 @@
         server-keys (curve/new-key-pair)
         ctx (cljeromq/context 1)
         in (cljeromq/socket! ctx :push)]
-    (curve/prepare-client-socket-for-server! in client-keys (:public server-keys))
-    (cljeromq/bind! in "inproc://reqrep")
+    (try
+      (curve/prepare-client-socket-for-server! in client-keys (:public server-keys))
+      ;; TODO: Make sure this gets unbound
+      (cljeromq/bind! in "inproc://encrypted-push<->pull")
 
-    (let [out (cljeromq/socket! ctx :pull)]
-      (curve/make-socket-a-server! out (:private server-keys))
-      (cljeromq/connect! out "inproc://reqrep")
+      (let [out (cljeromq/socket! ctx :pull)]
+        (try
+          (curve/make-socket-a-server! out (:private server-keys))
+          (cljeromq/connect! out "inproc://encrypted-push<->pull")
+          (try
+            (dotimes [n 10]
+              (let [req (.getBytes (str "request" n))
+                    rep (.getBytes (str "reply" n))]
+                (let [success (cljeromq/send! in req 0)]
+                  (when-not success
+                    (println "Sending request returned:" success)
+                    (is false)))
+                (let [response (cljeromq/recv! out 0)]
+                  (is (= (String. req) (String. response))))))
+            (finally (cljeromq/disconnect! out "inproc://encrypted-push<->pull")))
+          (finally (cljeromq/close! out))))
+      (finally
+        (cljeromq/close! in)
+        (cljeromq/terminate! ctx)))))
 
-      (dotimes [n 10]
-        (let [req (.getBytes (str "request" n))
-              rep (.getBytes (str "reply" n))]
-          (let [success (cljeromq/send! in req 0)]
-            (when-not success
-              (println "Sending request returned:" success)
-              (is false)))
-          (let [response (cljeromq/recv! out 0)]
-            (is (= (String. req) (String. response)))))))))
+(defn run-router-dealer-test
+  "Make sure I'm doing apples-to-apples comparing inproc to tcp
+and, probably more important, encrypted vs. plain text
+In the previous incarnation, everything except tcp seemed to work"
+  [in out]
+  (dotimes [n 10]
+    (let [req (.getBytes (str "request" n))
+          rep (.getBytes (str "reply" n))]
+      (comment (println n))
+      (let [_ (cljeromq/send-more! in nil)
+            success (cljeromq/send! in req 0)]
+        ;; Actually, as long as it didn't throw an exception,
+        ;; the send should have been a success
+        (when-not success
+          (println "Sending request returned:" success)
+          (is false)))
+
+      (let [id (cljeromq/recv! out 0)
+            delimeter (cljeromq/recv! out 0)
+            response (cljeromq/recv! out 0)
+            s-req (String. req)
+            s-rsp (String. response)]
+        (when-not (= s-req s-rsp)
+          (println "Sent '" s-req "' which is " (count req) " bytes long.\n"
+                   "Received '" s-rsp "' which is " (count response)
+                   " from " (String. id)))
+        (is (= s-req s-rsp))
+
+        (comment) (cljeromq/send-more! out (String. id)))
+      (let [_ (cljeromq/send-more! out "")
+            success (cljeromq/send! out (String. rep))]
+        (when-not success
+          (println "Error sending Reply: " success)
+          (is false)))
+      (println "Inproc dealer waiting on encrypted response from router")
+      (comment (let [_ (cljeromq/recv! in 0)
+                     response (cljeromq/recv! in 0)]
+                 (is (= (String. rep) (String. response)))))
+      (is false "Uncomment that form and get it to work"))))
 
 (deftest test-encrypted-router-dealer
   "Translated directly from my java unit test"
@@ -175,53 +236,27 @@
         server-keys (curve/new-key-pair)
         ctx (cljeromq/context 1)
         in (cljeromq/socket! ctx :dealer)
-        id-string "basic router/dealer encryption check"
-        id-byte-array (byte-array (map (comp byte int) id-string))  ; Shouldn't need
-        ;; Should also be unused
-        id-bytes (bytes id-byte-array)]
+        id-string "basic router/dealer encryption check"]
     (println "Encrypted router-dealer inproc test")
-    (curve/prepare-client-socket-for-server! in client-keys (:private server-keys))
-    (cljeromq/identify! in id-string)
-    (cljeromq/bind! in "inproc://reqrep")
-
-    (let [out (cljeromq/socket! ctx :router)]
-      (curve/make-socket-a-server! out (:private server-keys))
-      (cljeromq/connect! out "inproc://reqrep")  ; Much more realistic for this to bind.
-
-      (dotimes [n 10]
-        (let [req (.getBytes (str "request" n))
-              rep (.getBytes (str "reply" n))]
-          (comment (println n))
-          (let [_ (cljeromq/send-more! in (byte-array 0))
-                success (cljeromq/send! in req 0)]
-            ;; Actually, as long as it didn't throw an exception,
-            ;; the send should have been a success
-            (when-not success
-              (println "Sending request returned:" success)
-              (is false)))
-
-          (let [id (cljeromq/recv! out 0)
-                delimeter (cljeromq/recv! out 0)
-                response (cljeromq/recv! out 0)
-                s-req (String. req)
-                s-rsp (String. response)]
-            (when-not (= s-req s-rsp)
-              (println "Sent '" s-req "' which is " (count req) " bytes long.\n"
-                       "Received '" s-rsp "' which is " (count response)
-                       " from " (String. id)))
-            (is (= s-req s-rsp))
-
-            (comment) (cljeromq/send-more! out (String. id)))
-          (let [_ (cljeromq/send-more! out "")
-                success (cljeromq/send! out (String. rep))]
-            (when-not success
-              (println "Error sending Reply: " success)
-              (is false)))
-          (println "Inproc dealer waiting on encrypted response from router")
-          (comment (let [_ (cljeromq/recv! in 0)
-                         response (cljeromq/recv! in 0)]
-                     (is (= (String. rep) (String. response)))))
-          (is false "Uncomment that form and get it to work")))))
+    (try
+      (curve/prepare-client-socket-for-server! in client-keys (:private server-keys))
+      (cljeromq/identify! in id-string)
+      (cljeromq/bind! in "inproc://encrypted-router<->dealer")
+      (try
+        (let [out (cljeromq/socket! ctx :router)]
+          (try
+            (curve/make-socket-a-server! out (:private server-keys))
+            (cljeromq/connect! out "inproc://encrypted-router<->dealer")  ; Much more realistic for this to bind.
+            (try
+              (run-router-dealer-test in out)
+              (finally (cljeromq/disconnect! out "inproc://encrypted-router<->dealer")))
+            (finally (cljeromq/close! out))))
+        (finally
+          ;; TODO: Really do this after upgrading to 0mq 4.1
+          (comment (cljeromq/unbind! in "inproc://encrypted-router<->dealer"))))
+      (finally
+        (cljeromq/close! in)
+        (cljeromq/terminate! ctx))))
   (println "Dealer<->Router CURVE not checked"))
 
 (deftest test-encrypted-router-dealer-over-tcp
@@ -233,41 +268,14 @@
       (println "(not) Encrypted router-dealer TCP test")
       (curve/prepare-client-socket-for-server! in client-keys (:private server-keys))
       (cljeromq/bind! in "tcp://*:54398")
-      #_(try
+      (try
         (let [out (cljeromq/socket! ctx :router)]
           (try
             (curve/make-socket-a-server! out (:private server-keys))
             (cljeromq/connect! out "tcp://127.0.0.1:54398")
             (println "Sockets bound/connected. Beginning test")
             (try
-              (dotimes [n 10]
-                (println (str "Encrypted Router/Dealer over TCP: Test " n))
-                (let [req (.getBytes (str "request" n))
-                      rep (.getBytes (str "reply" n))]
-                  (comment) (println "Encrypted dealer/router over TCP" n)
-                  (let [success (cljeromq/send! in req 0)]
-                    (when-not success
-                      (println "Sending request returned:" success)
-                      (is false)))
-                  (println "Waiting for encrypted message from dealer to arrive at router over TCP")
-                  (comment (let [response (cljeromq/recv! out 0)]
-                             (println "Router received REQ")
-                             (let [s-req (String. req)
-                                   s-res (String. response)]
-                               (when-not (= s-req s-res)
-                                 (println "Sent '" s-req "' which consists of " (count req) " bytes\n"
-                                          "Received '" s-res "' which is " (count response) " bytes long")
-                                 (is (= s-req s-res)))))
-
-                           (let [success (cljeromq/send! out (String. rep))]
-                             (when-not success
-                               (println "Error sending Reply: " success)
-                               (is false)))
-                           (println "Dealer waiting for encrypted ACK from Router over TCP")
-                           (let [response (cljeromq/recv! in 0)]
-                             (is (= (String. rep) (String. response))))
-                           (println "Encrypted Dealer->Router over TCP complete"))
-                  (is false "Get the rest of the test passing")))
+              (run-router-dealer-test in out)
               (finally
                 (cljeromq/disconnect! out "tcp://127.0.0.1:54398")))
             (finally
@@ -291,46 +299,7 @@
           (cljeromq/set-router-mandatory! out)
           (cljeromq/connect! out "tcp://127.0.0.1:54398")
           (try
-            (dotimes [n 10]
-              (let [req (.getBytes (str "request" n))
-                    rep (.getBytes (str "reply" n))]
-                (comment )(println "Top of loop: " n)
-                (let [initial-success (cljeromq/send-more! in (byte-array 0) 0) ; NULL separator from non-address frame
-                      success (cljeromq/send! in req 0)]
-                  (when-not success
-                    (println "Sending request returned:" success)
-                    (is false "That should have thrown an exception")))
-                (println "Waiting for message from dealer to arrive at router")
-                (let [address-response-frame (cljeromq/recv! out 0)
-                      _ (println (str "Address frame received: " address-response-frame))
-                      null-separator-frame (cljeromq/recv! out 0)
-                      _ (println (str "Null separator received: " null-separator-frame))
-                      response (cljeromq/recv! out 0)]
-                  (println (str "Router received REQ: " response))
-                  (let [s-req (String. req)
-                        s-res (String. response)]
-                    (when-not (= s-req s-res)
-                      (println "Sent '" s-req "' which consists of " (count req) " bytes\n"
-                               "Received '" s-res "' which is " (count response) " bytes long")
-                      (is (= s-req s-res))))
-
-                  ;; Send response back from router
-                  (println "ACK'ing from router back to dealer")
-                  (cljeromq/send-more! out address-response-frame)
-                  (println "Sending NULL address separator")
-                  (cljeromq/send-more! out [])
-
-                  (let [msg (String. rep)
-                        _ (println "And then sending the reply: " msg)
-                        success (cljeromq/send! out msg)]
-                    (is success "Should have thrown an exception on failure to send reply")))
-
-                ;; Dealer receives that response
-                (println "Waiting for ACK from Router at Dealer")
-                (let [null-separator (cljeromq/recv! in 0)
-                      _ (println "Dealer Received NULL separator frame: " null-separator)
-                      response (cljeromq/recv! in 0)]
-                  (is (= (String. rep) (String. response))))))
+            (run-router-dealer-test in out)
             (finally
               (cljeromq/disconnect! out "tcp://127.0.0.1:54398")
               (cljeromq/close! out))))
@@ -373,6 +342,10 @@
 
 (comment
   ;;; This just became a lot more obsolete
+  ;;; It was really me sorting out the way I think things should work,
+  ;;; based on the low-level implementation details.
+  ;;; I'm tempted to just scrap it, but I don't have another example of
+  ;;; using ZAuth anywhere, and that piece is vital
   (deftest minimal-curve-communication-test
     (testing "Because communication is boring until the principals can swap messages"
       ;; Both threads block at receiving. Have verified that this definitely works in python
@@ -475,88 +448,3 @@
                     ))
                 (finally (.close zap-handler))))
             (finally (.term ctx))))))))
-
-(comment (deftest hardcoded-curve-communication-test
-           (testing "Try using keys that I just generated by hand from the python binding"
-             (let [server-keys (ZCurveKeyPair/Factory)
-                   server-public (.getBytes "hoaxyE2KWMErRBAUy<@1@hp%=.ykI&aXLSScm2@N")
-                   server-secret (.getBytes "t9]p?z@&md(@Guv28PfpI6-<CA+#-#VT!x(E(OgL")
-                   client-keys (ZCurveKeyPair/Factory)
-                   client-public (.getBytes "/sV8iUDqeYxYPdp-fsp<UUpMEPOEG]q}N1zL@na!")
-                   client-secret (.getBytes "zEL]A*h4:Cmoo}.>?mT@*)I5mt:(t{^$^.Sfz83s")]
-               (println "Trying to connect from '" (String. client-public) "' / '" (String. client-secret) "'\n(that's "
-                        (count client-public) " and " (count client-secret) " bytes) to\n'"
-                        (String. server-public) "' / '" (String. server-secret) "'\nwith " (count server-public)
-                        " and " (count server-secret) " bytes")
-               (let [ctx (ZMQ/context 1)]
-                 (try
-                   (let [zap-handler (.socket ctx ZMQ/REP)]
-                     (try
-                       ;; See if jzmq is using ZAuth behind my back in some sort of
-                       ;; sneaky way.
-                       ;; I honestly don't believe this is the case.
-                       (comment (.bind zap-handler "inproc://zeromq.zap.01"))
-                       (try
-                         (let [zap-future (future
-                                            ;; TODO: Honestly, this should really be using something
-                                            ;; like ZAuth's ZAPRequest and ZAuthAgent inner classes.
-                                            ;; Assuming I need it at all.
-                                            ;; (Imperical evidence implies that I do. Docs imply
-                                            ;; that I shouldn't.
-                                            (throw (RuntimeException. "Write this")))]
-                           (let [router (.socket ctx ZMQ/DEALER)]
-                             (try
-                               ;; python unit tests treat this as read-only
-                               (.setLongSockopt router 47 1)   ; server?
-                               ;; Most unit tests I see online set this.
-                               ;; The official suite doesn't.
-                                        ;(.setBytesSockopt router 50 server-public) ; curve-server-key
-                               ;; Definitely don't need client keys
-                                        ;(.setBytesSockopt router 48 client-public) ; curve-public-key
-                                        ;(.setBytesSockopt router 49 client-secret) ; curve-secret-key
-                               (.setBytesSockopt router 49 server-secret)
-                               (.setIdentity router (.getBytes "SOMETHING"))  ; IDENT...doesn't seem to matter
-                               (let [dealer (.socket ctx ZMQ/DEALER)]
-                                 (try
-                                   (.setLongSockopt dealer 47 0)
-                                        ;(.setBytesSockopt dealer 49 server-secret)
-                                   ;; Q: Do I actually need to set this?
-                                   (.setBytesSockopt dealer 50 server-public) ; curve-server-key
-                                   (.setBytesSockopt dealer 48 client-public) ; curve-public-key
-                                   (.setBytesSockopt dealer 49 client-secret) ; curve-secret-key
-                                   ;; Note that just getting this far is a fairly significant
-                                   ;; victory
-
-                                   (let [localhost "tcp://127.0.0.1"
-                                         port (.bindToRandomPort router localhost)
-                                         url (str localhost ":" port)]
-                                     (try
-                                       (.connect dealer url)
-                                       (try
-                                         (let [resp (future (println "Hard Dealer: sending greeting")
-                                                            (.send dealer "OLEH")
-                                                            (println "Hard Dealer: greeting sent")
-                                                            (let [result (String. (.recv dealer))]
-                                                              (println "Hard Dealer: received " result)
-                                                              result))]
-                                           (println "Hard Router: Waiting on encrypted message from dealer")
-                                           (let [greet (.recv router)]  ;; TODO: Add a timeout
-                                             (is (= "OLEH" (String. greet)))
-                                             (println "Hard Router: Encrypted greeting decrypted")
-                                             (.send router "cool")
-                                             (println "Hard Router: Response sent")
-                                             (is (= @resp "cool"))
-                                             (println "Hard Router: Handshook")))
-                                         (finally
-                                           (.disconnect dealer url)))
-                                       (finally
-                                         (.unbind router url))))
-                                   (finally (.close dealer))))
-                               (finally (.close router))))
-                           (when-not (realized? zap-future)
-                             (future-cancel zap-future)))
-                         (finally
-                           ;; Don't try to unbind inproc sockets
-                           ))
-                       (finally (.close zap-handler))))
-                   (finally (.term ctx))))))))

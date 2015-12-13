@@ -505,15 +505,15 @@ Returns the port number"
    (comment)
    (println "Default Send trying to transmit:\n" message "\n(a"
             (class message) ")")
-   (when (nil? message)
-     (throw (NullPointerException. (str "Trying to send on" socket "with flags" flags))))
-   ;; For now, assume that we'll only be transmitting something
-   ;; that can be printed out in a form that can be read back in
-   ;; using eval.
-   ;; The messaging layer really shouldn't be responsible for
-   ;; serialization at all, but it makes sense to at least start
-   ;; this out here.
-   (send! socket (pr-str message) flags))
+   (if (nil? message)
+     (send! socket (byte-array 0) flags)
+     ;; For now, assume that we'll only be transmitting something
+     ;; that can be printed out in a form that can be read back in
+     ;; using eval.
+     ;; The messaging layer really shouldn't be responsible for
+     ;; serialization at all, but it makes sense to at least start
+     ;; this out here.
+     (send! socket (pr-str message) flags)))
   ([socket message]
    (send! socket message :dont-wait)))
 
