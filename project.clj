@@ -17,8 +17,8 @@
   ;; Because java isn't bright enough to find this without help.
   :jvm-opts [~(str "-Djava.library.path=/usr/local/lib:" (System/getenv "LD_LIBRARY_PATH"))]
   ;; TODO: Ditch midje
-  :plugins [[lein-midje "3.0.0"]]
-  :profiles {:dev {:dependencies [[midje "1.8.2" :exclusions [clj-tuple riddley]]
+  ;;:plugins [[lein-midje "3.0.0"]]
+  :profiles {:dev {:dependencies [#_[midje "1.8.2" :exclusions [clj-tuple riddley]]
                                   [org.clojure/tools.namespace "0.2.10"]
                                   [org.clojure/java.classpath "0.2.3"]]
                    :source-paths ["dev"]}}

@@ -47,15 +47,13 @@
         (is (= @client "kthxbye"))
         (println "Background thread exited"))
       (finally
-        ;; Can't unbind inproc socket
-        ;; This is actually Bug #949 in libzmq.
-        ;; It should be fixed in 4.1.0, but backporting to 4.0.x
-        ;; has been deemed not worth the effort
         (try
           (core/unbind! rep uri)
-          ;; This should be better now
-          (is false "0mq bug got fixed")
           (catch ExceptionInfo ex
+            ;; Can't unbind inproc socket
+            ;; This is actually Bug #949 in libzmq.
+            ;; It seems to be fixed in 4.1.0, but backporting to 4.0.x
+            ;; has been deemed not worth the effort
             (is (= (-> ex .getData :error-message) "No such file or directory"))))
         (println "Bottom of inproc req-rep-handshake")
         (teardown {:context ctx
@@ -115,29 +113,29 @@
               (core/send! receiver msg)
               (println msg " -- sent")
               (let [received (core/recv! sender)]
-                (is (= received msg)
+                (is (= (edn/read-string received) msg)
                     "Transmitting keyword failed")))
 
             (let [msg (list :a 3 "abc")]
               (core/send! sender msg)
               (let [received (core/recv! receiver)]
-                (is (= received msg) "Transmitting sequence")))
+                (is (= (edn/read-string received) msg) "Transmitting sequence")))
 
             (let [msg 1000]
               (core/send! receiver msg)
-              (let [received (core/raw-recv! sender)]
-                (is (= received msg))))
+              (let [received (core/recv! sender)]
+                (is (= (edn/read-string received) msg))))
 
             (let [msg Math/PI]
               (core/send! sender msg)
-              (let [received (core/raw-recv! receiver)]
+              (let [received (core/recv! receiver)]
                 ;; Honestly, this probably shouldn't round-trip correctly
-                (is (= received msg))))
+                (is (= (edn/read-string received) msg))))
 
             (let [msg 1000M]
               (core/send! receiver msg)
-              (let [received (core/raw-recv! sender)]
-                (is (= received msg))))
+              (let [received (core/recv! sender)]
+                (is (= (edn/read-string received) msg))))
 
             (comment (future-fact "Transmit multiple sequences"
                                   ;; Q: What could this look like?
@@ -188,7 +186,7 @@
                 (let [msg :something]
                   (core/send! receiver msg)
                   (let [result (core/recv! sender)]
-                    (is (= msg (edn/read result)) "Echoing keyword failed")))
+                    (is (= msg (edn/read-string result)) "Echoing keyword failed")))
                 (finally (core/disconnect! sender url))))
             (finally
               (core/unbind! receiver url)))
@@ -202,6 +200,8 @@
       (let [addr "tcp://*:5678"]
         (core/bind! nothing addr)
         (println "Have a socket bound")
+        ;; This is failing
+        ;; Q: Why?
         (core/unbind! nothing addr)))))
 
 (deftest string->bytes->string []

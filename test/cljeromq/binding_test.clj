@@ -36,7 +36,6 @@
                 ;; has been deemed not worth the effort
                 (try
                   (cljeromq/unbind! req uri)
-                  (println "The unbind inproc socket bug's been fixed")
                   (catch ExceptionInfo _
                     (is true "This matches current, albeit incorrect, behavior")))))
             (finally (cljeromq/close! req))))
@@ -92,6 +91,9 @@
             (cljeromq/set-socket-option! router 47 1)   ; server?
             ;; Most unit tests I see online set this.
             ;; The official suite doesn't.
+            ;; But czmq definitely sets this.
+            ;; Is that an implementation detail?
+            ;; Which way should this work?
             ;(.setBytesSockopt router 50 server-public) ; curve-server-key
             ;; Definitely don't need client keys
             ;(.setBytesSockopt router 48 client-public) ; curve-public-key
@@ -113,7 +115,7 @@
         (finally (cljeromq/terminate! ctx))))))
 
 (deftest test-not-really-encrypted-req-rep
-  "Translated directly from my java unit test"
+  "TODO: Switch to TCP so there's a point"
   (let [client-keys (curve/new-key-pair)
         server-keys (curve/new-key-pair)
         ctx (cljeromq/context 1)
@@ -152,9 +154,7 @@
               (finally (cljeromq/disconnect! out "inproc://reqrep")))
             (finally (cljeromq/close! out))))
         (finally
-          ;; Don't do this if we're using anything earlier than 4.1.0
-          ;; Which I should really quit trying to use very soon
-          (comment (cljeromq/unbind! in "inproc://reqrep"))))
+          (cljeromq/unbind! in "inproc://reqrep")))
       (finally
         (cljeromq/close! in)
         (cljeromq/terminate! ctx)))))
@@ -198,7 +198,7 @@ In the previous incarnation, everything except tcp seemed to work"
     (let [s-req (str "request" n)
           req (.getBytes s-req)
           rep (.getBytes (str "reply" n))]
-      (comment) (println "Router/Dealer test exchange " n)
+      (comment (println "Router/Dealer test exchange " n))
       (let [_ (cljeromq/send-more! dealer nil)
             success (cljeromq/send! dealer req 0)]
         ;; As long as it didn't throw an exception,
@@ -208,22 +208,18 @@ In the previous incarnation, everything except tcp seemed to work"
 
       (let [dealer-thread
             (future
-              (println "Dealer waiting on response from router")
+              (comment (println "Dealer waiting on response from router"))
               (let [null-separator (cljeromq/recv! dealer 0)
-                    _ (println "NULL separator: " null-separator)
                     response (cljeromq/recv! dealer 0)]
                 (is (= (String. rep) (String. response)))
-                (println "All's well with the Dealer ACK")
+                (comment (println "All's well with the Dealer ACK"))
                 true))]
 
         ;; Router read
-        (println "Reading what the dealer sent")
+        (comment (println "Reading what the dealer sent"))
         (let [address (cljeromq/raw-recv! router 0)   ;  <---- N.B.
-              _ (println "Address frame received: " address)
               delimeter (cljeromq/recv! router 0)
-              _ (println "Null Separator: " delimeter)
               from-dealer (cljeromq/recv! router 0)
-              _ (println "Actual message: " from-dealer)
               s-rsp (String. from-dealer)]
           (is (= 0 (count delimeter)))
           (is (= s-req s-rsp)
@@ -231,13 +227,11 @@ In the previous incarnation, everything except tcp seemed to work"
                    "Received '" s-rsp "' which is " (count from-dealer)
                    " from " (String. address)))
 
-          (println "Router received. Responding")
           (cljeromq/send-more! router address))
         (let [_ (cljeromq/send-more! router nil)
               success (cljeromq/send! router rep 0)]
           (is success
               (str "Error sending Reply: " success)))
-        (println "Waiting for Dealer to receive that response")
         (is @dealer-thread "Failed at the end")))))
 
 (deftest test-not-really-encrypted-router-dealer
@@ -265,8 +259,7 @@ In the previous incarnation, everything except tcp seemed to work"
               (finally (cljeromq/disconnect! out "inproc://encrypted-router<->dealer")))
             (finally (cljeromq/close! out))))
         (finally
-          ;; TODO: Really do this after upgrading to 0mq 4.1
-          (comment (cljeromq/unbind! in "inproc://encrypted-router<->dealer"))))
+          (cljeromq/unbind! in "inproc://encrypted-router<->dealer")))
       (finally
         (cljeromq/close! in)
         (cljeromq/terminate! ctx)))))
@@ -443,112 +436,3 @@ In the previous incarnation, everything except tcp seemed to work"
                   (comment (cljeromq/unbind! zap-handler "inproc://zeromq.zap.01"))))
               (finally (cljeromq/close! zap-handler))))
           (finally (cljeromq/terminate! ctx)))))))
-
-(comment
-  ;;; This just became a lot more obsolete
-  ;;; It was really me sorting out the way I think things should work,
-  ;;; based on the low-level implementation details.
-  ;;; I'm tempted to just scrap it, but I don't have another example of
-  ;;; using ZAuth anywhere, and that piece is vital
-  (deftest minimal-curve-communication-test
-    (testing "Because communication is boring until the principals can swap messages"
-      ;; Both threads block at receiving. Have verified that this definitely works in python
-      (let [server-keys (ZCurveKeyPair/Factory)
-            server-public (.publicKey server-keys)
-            server-secret (.privateKey server-keys)
-            client-keys (ZCurveKeyPair/Factory)
-            client-public (.publicKey client-keys)
-            client-secret (.privateKey client-keys)]
-        (println "Trying to connect from " (String. client-public) "/" (String. client-secret) "\n(that's "
-                 (count client-public) " and " (count client-secret) " bytes) to\n"
-                 (String. server-public) "/" (String. server-secret) "\nwith " (count server-public)
-                 " and " (count server-secret) " bytes")
-        (let [ctx (ZMQ/context 1)]
-          (try
-            (let [zap-handler (.socket ctx ZMQ/REP)]
-              (try
-                ;; See if jzmq is using ZAuth behind my back in some sort of
-                ;; sneaky way.
-                ;; I honestly don't believe this is the case.
-                ;; And adding this doesn't seem to make any difference
-                (.bind zap-handler "inproc://zeromq.zap.01")
-                (try
-                  (let [zap-future (future
-                                     ;; TODO: Honestly, this should really be using something
-                                     ;; like ZAuth's ZAPRequest and ZAuthAgent inner classes.
-                                     ;; Assuming I need it at all.
-                                     ;; (Imperical evidence implies that I do. Docs imply
-                                     ;; that I shouldn't.
-                                     (loop [version (.recv zap-handler)]
-                                       (println "ZAP validation request received")
-                                       (throw (RuntimeException. "Got here"))
-                                       (let [sequence (.recv zap-handler)
-                                             domain (.recv zap-handler)
-                                             address (.recv zap-handler)
-                                             identity (.recv zap-handler)
-                                             mechanism (.recv zap-handler)]
-                                         (println "ZAP:\n" (String. version) "\n"
-                                                  (String. sequence) "\n"
-                                                  (String. domain) "\n"
-                                                  (String. address) "\n"
-                                                  (String. identity) "\n"
-                                                  (String. mechanism "\n"))
-                                         ;; Need to respond with the sequence, b"200 and b"OK"
-                                         ;; (based on the python handler)
-                                         (.sendMore zap-handler "1.0")
-                                         (.sendMore zap-handler sequence)
-                                         (.sendMore zap-handler "200")
-                                         (.sendMore zap-handler "OK")
-                                         (.sendMore zap-handler "user id")
-                                         (.send zap-handler "metadata isn't used"))
-                                       (recur (.recv zap-handler))))]
-                    (let [server (.socket ctx ZMQ/REP)]
-                      (try
-                        (.makeIntoCurveServer server server-secret)
-                        ;; python unit tests treat this as read-only
-
-                        (let [localhost "tcp://127.0.0.1"
-                              port (.bindToRandomPort server localhost)
-                              url (str localhost ":" port)]
-                          (try
-                            (println "Doing comms over '" url "'")
-                            (let [client (.socket ctx ZMQ/DEALER)]
-                              (try
-                                (.makeIntoCurveClient client client-keys server-public)
-                                (try
-                                  (.connect client url)
-                                  (try
-                                    (let [server-thread
-                                          (future
-                                            (println "Server: Waiting on encrypted message from dealer")
-                                            (let [greet (.recv server)]  ;; TODO: Add a timeout so we don't block everything
-                                              (is (= "OLEH" (String. greet)))
-                                              (println "Server: Encrypted greeting decrypted")
-                                              (is (.send server "cool"))
-                                              (println "server: Response sent")))]
-                                      (try
-
-                                        (println "Client: sending greeting")
-                                        (is (.sendMore client ""))
-                                        (is (.send client "OLEH"))
-                                        (println "Client: greeting sent")
-                                        (let [identity (String. (.recv client))]
-                                          (is (.hasReceiveMore client))
-                                          (let [result (String. (.recv client))]
-                                            (println "Client: received " result
-                                                     " from " identity)
-                                            (is (= result "cool"))))
-                                        (finally
-                                          (when-not (realized? server-thread)
-                                            (future-cancel server-thread)))))
-                                    (finally (.disconnect client url)))
-                                  (finally (.close client)))
-                                (finally (.unbind server url))))))
-                        (finally (.close server))))
-                    (when-not (realized? zap-future)
-                      (future-cancel zap-future)))
-                  (finally
-                    ;; Don't try to unbind inproc sockets
-                    ))
-                (finally (.close zap-handler))))
-            (finally (.term ctx))))))))

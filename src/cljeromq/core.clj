@@ -208,6 +208,16 @@ to make swapping back and forth seamless."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Public
 
+(s/defn version :- s/Int
+  []
+  (let [shorthand (ZMQ/version)
+        major (int (/ shorthand 10000))
+        minor (-> shorthand (rem 1000) (/ 100) int)
+        patch (rem shorthand 100)]
+    {:major major
+     :minor minor
+     :patch patch}))
+
 (s/defn context :- Context
   "Create a messaging contexts.
 threads is the number of threads to use. Should never be larger than (dec cpu-count).
@@ -513,9 +523,9 @@ Returns the port number"
 
 (defmethod send! :default
   ([socket message flags]
-   (comment
-     (println "Default Send trying to transmit:\n" message "\n(a"
-              (class message) ")"))
+   (comment)
+   (println "Default Send trying to transmit:\n" message "\n(a"
+            (class message) ")")
    (if (nil? message)
      (send! socket (byte-array 0) flags)
      ;; For now, assume that we'll only be transmitting something
