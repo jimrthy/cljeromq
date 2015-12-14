@@ -1,5 +1,5 @@
 ;;;; Really need to add a license.
-;;;; I really thought that this needed to be LGPL,
+;;;; I thought that this needed to be LGPL,
 ;;;; since that's 0mq's license.
 
 ;;;; But the GPL is really only viral with static linking,
