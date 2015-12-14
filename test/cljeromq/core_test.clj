@@ -2,6 +2,7 @@
   (:import [clojure.lang ExceptionInfo]
            [org.zeromq.jni ZMQ])
   (:require [cljeromq.core :as core]
+            [clojure.edn :as edn]
             [clojure.test :refer (deftest is)]))
 
 (defn setup
@@ -30,6 +31,7 @@
 
 (deftest inproc-req-rep-handshake
   []
+  (println "inproc req-rep-handshake")
   (let [uri "inproc://a-test-1"
         [ctx req rep] (setup uri :req :rep)]
     (try
@@ -51,9 +53,11 @@
         ;; has been deemed not worth the effort
         (try
           (core/unbind! rep uri)
+          ;; This should be better now
           (is false "0mq bug got fixed")
           (catch ExceptionInfo ex
             (is (= (-> ex .getData :error-message) "No such file or directory"))))
+        (println "Bottom of inproc req-rep-handshake")
         (teardown {:context ctx
                    :client req
                    :server rep
@@ -62,6 +66,7 @@
 
 (deftest tcp-req-rep-handshake
   []
+  (println "req-rep handshake over TCP")
   (let [uri "tcp://127.0.0.1:8709"
         [ctx req rep] (setup uri :req :rep)]
     (try
@@ -76,75 +81,85 @@
 
 (deftest basic-send-receive
   []
+  (println "Basic Send-Receive")
   (let [ctx (core/context 1)]
     (try
-      (let [url "tcp://localhost:10101"
+      (let [url "tcp://127.0.0.1:10101"
             sender (core/socket! ctx :req)
             receiver (core/socket! ctx :rep)]
         (try
           (core/bind! receiver url)
+          (println "Receiver bound")
           (core/connect! sender url)
+          (try
+            (println "Starting tests")
+            ;; TODO: Really should split these up.
+            ;; Configuring the context and sockets is part of setUp.
+            ;; That would allow tests to proceed after a previous
+            ;; one fails.
+            ;; OTOH: Really should be using :dealer and :router...
+            ;; except that, for this scenario, :req and :rep are
+            ;; actually exactly what I want, once this actually works.
 
-          (println "Starting tests")
-          ;; TODO: Really should split these up.
-          ;; Configuring the context and sockets is part of setUp.
-          ;; That would allow tests to proceed after a previous
-          ;; one fails.
-          ;; OTOH: Really should be using :dealer and :router...
-          ;; except that, for this scenario, :req and :rep are
-          ;; actually exactly what I want, once this actually works.
 
-          (let [msg "xbcAzy"]
-            (comment (println "Sending " msg))
-            (core/send! sender msg)
-            (comment (println "Receiving"))
-            (let [received (core/recv! receiver :wait)]
-              (is (= received msg) "Didn't receive what was sent")))
-          (comment (println "String sent and received"))
+            (let [msg "xbcAzy"]
+              (comment (println "Sending " msg))
+              (core/send! sender msg)
+              (comment (println "Receiving"))
+              (let [received (core/recv! receiver :wait)]
+                (is (= received msg) "Didn't receive what was sent")))
+            (comment (println "String sent and received"))
 
-          (let [msg :message]
-            (println "Sending: " msg)
-            (core/send! receiver msg)
-            (println msg " -- sent")
-            (let [received (core/recv! sender)]
-              (is (= received msg)
-                  "Transmitting keyword failed")))
+            (let [msg :message]
+              (println "Sending: " msg)
+              (core/send! receiver msg)
+              (println msg " -- sent")
+              (let [received (core/recv! sender)]
+                (is (= received msg)
+                    "Transmitting keyword failed")))
 
-          (let [msg (list :a 3 "abc")]
-            (core/send! sender msg)
-            (let [received (core/recv! receiver)]
-              (is (= received msg) "Transmitting sequence")))
+            (let [msg (list :a 3 "abc")]
+              (core/send! sender msg)
+              (let [received (core/recv! receiver)]
+                (is (= received msg) "Transmitting sequence")))
 
-          (let [msg 1000]
-            (core/send! receiver msg)
-            (let [received (core/raw-recv! sender)]
-              (is (= received msg))))
+            (let [msg 1000]
+              (core/send! receiver msg)
+              (let [received (core/raw-recv! sender)]
+                (is (= received msg))))
 
-          (let [msg Math/PI]
-            (core/send! sender msg)
-            (let [received (core/raw-recv! receiver)]
-              ;; Honestly, this probably shouldn't round-trip correctly
-              (is (= received msg))))
+            (let [msg Math/PI]
+              (core/send! sender msg)
+              (let [received (core/raw-recv! receiver)]
+                ;; Honestly, this probably shouldn't round-trip correctly
+                (is (= received msg))))
 
-          (comment (future-fact "Transmit big integer"))
-          (let [msg 1000M]
-            (core/send! receiver msg)
-            (let [received (core/raw-recv! sender)]
-              (is (= received msg))))
+            (let [msg 1000M]
+              (core/send! receiver msg)
+              (let [received (core/raw-recv! sender)]
+                (is (= received msg))))
 
-          (comment (future-fact "Transmit multiple sequences"
-                                ;; Q: What could this look like?
-                                ;; A: Well, using send-more! seems like the
-                                ;; most obvious approach
-                                ))
-          (finally (core/unbind! receiver url)
-                   (core/close! receiver)
-                   (core/disconnect! sender url)
-                   (core/close! sender))))
-      (finally (core/terminate! ctx)))))
+            (comment (future-fact "Transmit multiple sequences"
+                                  ;; Q: What could this look like?
+                                  ;; A: Well, using send-more! seems like the
+                                  ;; most obvious approach
+                                  ))
+            (finally
+              (core/unbind! receiver url)
+              (println "a")
+              (core/disconnect! sender url)
+              (println "c")))
+          (finally
+            (println "basic-send-receive cleaning up")
+            (core/close! receiver)
+            (println "b")
+            (core/close! sender)
+            (println "d"))))
+      (finally (core/terminate! ctx))))
+  (println "basic-send-receive exiting"))
 
 (deftest messaging-macros []
-  (println "Setting up context")
+  (println "Messaging Macros")
   (core/with-context [ctx 1]
     (println "Setting up receiver")
     (core/with-socket [receiver ctx :rep]
@@ -152,32 +167,36 @@
       (println "Receiver: " receiver)
 
       ;; TODO: Don't hard-code this port number
-      (let [url  "tcp://localhost:10101"]
+      (let [url  "tcp://127.0.0.1:10103"]
         (println "Binding receiver")
-        (core/bind! receiver url)
         (try
-          (println "Setting up sender")
-          (core/with-socket [sender ctx :req]
-            (println "Connecting sender")
-            (core/connect! sender url)
+          (core/bind! receiver url)
+          (try
+            (println "Setting up sender")
+            (core/with-socket [sender ctx :req]
+              (println "Connecting sender")
+              (core/connect! sender url)
 
-            (try
-              (is (= 0 0) "Connecting sockets broke reality")
+              (try
+                (is (= 0 0) "Connecting sockets broke reality")
 
-              (let [msg "abcxYz1"]
-                (core/send! sender msg)
-                (let [result (core/recv! receiver)]
-                  (is (= msg result) "Echoing failed")))
+                (let [msg "abcxYz1"]
+                  (core/send! sender msg)
+                  (let [result (core/recv! receiver)]
+                    (is (= msg result) "Echoing failed")))
 
-              (let [msg :something]
-                (core/send! receiver msg)
-                (let [result (core/recv! sender)]
-                  (is (= msg result) "Echoing keyward failed")))
-              (finally (core/disconnect! sender url))))
-          (finally
-            (core/unbind! receiver url)))))))
+                (let [msg :something]
+                  (core/send! receiver msg)
+                  (let [result (core/recv! sender)]
+                    (is (= msg (edn/read result)) "Echoing keyword failed")))
+                (finally (core/disconnect! sender url))))
+            (finally
+              (core/unbind! receiver url)))
+          (catch ExceptionInfo ex
+            (is (not ex) "Socket binding failed")))))))
 
 (deftest check-unbinding []
+  (println "Check Unbinding")
   (core/with-context [ctx 1]
     (core/with-socket [nothing ctx :rep]
       (let [addr "tcp://*:5678"]
@@ -186,6 +205,7 @@
         (core/unbind! nothing addr)))))
 
 (deftest string->bytes->string []
+  (println "String->bytes round trip")
   (let [s "The quick red fox jumped over the lazy brown dog"
         bs (core/string->bytes s)
         round-tripped (core/bytes->string bs)]

@@ -491,7 +491,7 @@ Returns the port number"
 (defmethod send! String
   ([socket ^String message flags]
    ;; FIXME: Debug only
-   (comment) (println "Sending string:\n" message "\nwith flags: " flags)
+   (comment (println "Sending string:\n" message "\nwith flags: " flags))
    ;; My original plan was that this would convert the string
    ;; to clojure.core$bytes, so it would call the method above
    (send! socket (.getBytes message) flags))
@@ -507,15 +507,15 @@ Returns the port number"
    ;; offset - where the message starts in that array?
    ;; number of bytes to send
    ;; flags
-   (comment) (println "Sending a " (count message) " byte array with flags: " flags)
+   (comment (println "Sending a " (count message) " byte array with flags: " flags))
    (wrap-0mq-numeric-fn-call #(ZMQ/zmq_send socket message 0 (count message) (K/flags->const flags))
                              "Sending a byte array failed")))
 
 (defmethod send! :default
   ([socket message flags]
-   (comment)
-   (println "Default Send trying to transmit:\n" message "\n(a"
-            (class message) ")")
+   (comment
+     (println "Default Send trying to transmit:\n" message "\n(a"
+              (class message) ")"))
    (if (nil? message)
      (send! socket (byte-array 0) flags)
      ;; For now, assume that we'll only be transmitting something

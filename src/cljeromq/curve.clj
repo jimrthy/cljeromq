@@ -44,19 +44,16 @@ array if you need that.
 e.g.
 ;; (def s (String. (.array buffer)))"
   []
-  (println "Generating a CURVE key pair")
   (let [text-key-length (-> K/const :curve :text-key-length inc)
         public-key-text (CharBuffer/allocate text-key-length)
         private-key-text (CharBuffer/allocate text-key-length)
         text-pair (ZMQ/zmq_curve_keypair public-key-text private-key-text)]
     (assert (not= (into [] public-key-text) (into [] private-key-text)))
-    (println "Decoding that key pair")
     (let [binary-key-length (-> K/const :curve :binary-key-length)
           public-key (byte-array binary-key-length)
           private-key (byte-array binary-key-length)]
       (ZMQ/zmq_z85_decode public-key (.toString public-key-text))
       (ZMQ/zmq_z85_decode private-key (.toString private-key-text))
-      (println "Key Pair generated successfully")
       {:public public-key
        :private private-key})))
 
