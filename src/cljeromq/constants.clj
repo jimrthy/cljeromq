@@ -32,7 +32,8 @@ Although, really, that's almost pedantic."
              :sndmore ZMQ/SNDMORE
              :send-more ZMQ/SNDMORE}
 
-   :curve {:key-length 40}
+   :curve {:binary-key-length 32
+           :text-key-length 40}
 
    :error {
            :zero 156384712  ; seemingly random baseline magic number for specific errors

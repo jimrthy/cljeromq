@@ -104,14 +104,17 @@ to make swapping back and forth seamless."
     {:code code
      :message (.toString message)})))
 
+(s/defn last-error :- {:error-code s/Int, :error-message s/Str}
+  []
+  (let [errno (ZMQ/zmq_errno)
+        error-string (ZMQ/zmq_strerror errno)]
+    {:error-code errno
+     :error-message error-string}))
+
 (s/defn add-error-detail :- ExceptionInfo
   [msg :- s/Str
    details :- {s/Any s/Any}]
-  (let [errno (ZMQ/zmq_errno)
-        error-string (ZMQ/zmq_strerror errno)]
-    (ex-info msg (assoc details
-                        :error-code errno
-                        :error-message error-string))))
+  (ex-info msg (into details (last-error))))
 
 (s/defn wrap-0mq-boolean-fn-call :- s/Int
   "Assumes the function being wrapped returns a boolean"
@@ -504,7 +507,7 @@ Returns the port number"
    ;; offset - where the message starts in that array?
    ;; number of bytes to send
    ;; flags
-   (comment (println "Sending a byte array"))
+   (comment) (println "Sending a " (count message) " byte array with flags: " flags)
    (wrap-0mq-numeric-fn-call #(ZMQ/zmq_send socket message 0 (count message) (K/flags->const flags))
                              "Sending a byte array failed")))
 

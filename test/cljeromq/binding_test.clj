@@ -161,91 +161,104 @@
 
 (deftest test-encrypted-push-pull
   "Translated directly from my java unit test"
+  (println "Testing encrypted push-pull")
   (let [client-keys (curve/new-key-pair)
         server-keys (curve/new-key-pair)
         ctx (cljeromq/context 1)
-        in (cljeromq/socket! ctx :push)]
+        pull (cljeromq/socket! ctx :pull)
+        address "tcp://127.0.0.1:52711"]
     (try
-      (curve/prepare-client-socket-for-server! in client-keys (:public server-keys))
-      ;; TODO: Make sure this gets unbound
-      (cljeromq/bind! in "inproc://encrypted-push<->pull")
-
-      (let [out (cljeromq/socket! ctx :pull)]
-        (try
-          (curve/make-socket-a-server! out (:private server-keys))
-          (cljeromq/connect! out "inproc://encrypted-push<->pull")
+      (curve/make-socket-a-server! pull server-keys)
+      (cljeromq/bind! pull address)
+      (try
+        (let [push (cljeromq/socket! ctx :push)]
           (try
-            (dotimes [n 10]
-              (let [req (.getBytes (str "request" n))
-                    rep (.getBytes (str "reply" n))]
-                (let [success (cljeromq/send! in req 0)]
-                  (when-not success
-                    (println "Sending request returned:" success)
-                    (is false)))
-                (let [response (cljeromq/recv! out 0)]
-                  (is (= (String. req) (String. response))))))
-            (finally (cljeromq/disconnect! out "inproc://encrypted-push<->pull")))
-          (finally (cljeromq/close! out))))
+            (curve/prepare-client-socket-for-server! push client-keys (:public server-keys))
+            (cljeromq/connect! push address)
+            (try
+              (dotimes [n 10]
+                (let [req (.getBytes (str "request" n))
+                      rep (.getBytes (str "reply" n))]
+                  (is (cljeromq/send! push req 0) (str "Pushing failed: " (cljeromq/last-error)))
+                  (let [response (cljeromq/recv! pull 0)]
+                    (is (= (String. req) (String. response))))))
+              (finally (cljeromq/disconnect! push address)))
+            (finally (cljeromq/close! push))))
+        (finally (cljeromq/unbind! pull address)))
       (finally
-        (cljeromq/close! in)
+        (cljeromq/close! pull)
         (cljeromq/terminate! ctx)))))
 
 (defn run-router-dealer-test
   "Make sure I'm doing apples-to-apples comparing inproc to tcp
 and, probably more important, encrypted vs. plain text
 In the previous incarnation, everything except tcp seemed to work"
-  [in out]
+  [dealer router]
   (dotimes [n 10]
-    (let [req (.getBytes (str "request" n))
+    (let [s-req (str "request" n)
+          req (.getBytes s-req)
           rep (.getBytes (str "reply" n))]
-      (comment) (println n)
-      (let [_ (cljeromq/send-more! in nil)
-            success (cljeromq/send! in req 0)]
-        ;; Actually, as long as it didn't throw an exception,
+      (comment) (println "Router/Dealer test exchange " n)
+      (let [_ (cljeromq/send-more! dealer nil)
+            success (cljeromq/send! dealer req 0)]
+        ;; As long as it didn't throw an exception,
         ;; the send should have been a success
-        (when-not success
-          (println "Sending request returned:" success)
-          (is false)))
+        (is success
+          (str "Sending request returned:" success)))
 
-      (let [id (cljeromq/recv! out 0)
-            delimeter (cljeromq/recv! out 0)
-            response (cljeromq/recv! out 0)
-            s-req (String. req)
-            s-rsp (String. response)]
-        (when-not (= s-req s-rsp)
-          (println "Sent '" s-req "' which is " (count req) " bytes long.\n"
-                   "Received '" s-rsp "' which is " (count response)
-                   " from " (String. id)))
-        (is (= s-req s-rsp))
+      (let [dealer-thread
+            (future
+              (println "Dealer waiting on response from router")
+              (let [null-separator (cljeromq/recv! dealer 0)
+                    _ (println "NULL separator: " null-separator)
+                    response (cljeromq/recv! dealer 0)]
+                (is (= (String. rep) (String. response)))
+                (println "All's well with the Dealer ACK")
+                true))]
 
-        (comment) (cljeromq/send-more! out (String. id)))
-      (let [_ (cljeromq/send-more! out "")
-            success (cljeromq/send! out (String. rep))]
-        (when-not success
-          (println "Error sending Reply: " success)
-          (is false)))
-      (println "Inproc dealer waiting on encrypted response from router")
-      (comment (let [_ (cljeromq/recv! in 0)
-                     response (cljeromq/recv! in 0)]
-                 (is (= (String. rep) (String. response)))))
-      (is false "Uncomment that form and get it to work"))))
+        ;; Router read
+        (println "Reading what the dealer sent")
+        (let [address (cljeromq/raw-recv! router 0)   ;  <---- N.B.
+              _ (println "Address frame received: " address)
+              delimeter (cljeromq/recv! router 0)
+              _ (println "Null Separator: " delimeter)
+              from-dealer (cljeromq/recv! router 0)
+              _ (println "Actual message: " from-dealer)
+              s-rsp (String. from-dealer)]
+          (is (= 0 (count delimeter)))
+          (is (= s-req s-rsp)
+              (str "Sent '" s-req "' which is " (count req) " bytes long.\n"
+                   "Received '" s-rsp "' which is " (count from-dealer)
+                   " from " (String. address)))
+
+          (println "Router received. Responding")
+          (cljeromq/send-more! router address))
+        (let [_ (cljeromq/send-more! router nil)
+              success (cljeromq/send! router rep 0)]
+          (is success
+              (str "Error sending Reply: " success)))
+        (println "Waiting for Dealer to receive that response")
+        (is @dealer-thread "Failed at the end")))))
 
 (deftest test-encrypted-router-dealer
-  "Translated directly from my java unit test"
+  "No encryption applied. This is pretty much useless except as a baseline"
+  (println "Encrypted (not really) router-dealer inproc test")
   (let [client-keys (curve/new-key-pair)
         server-keys (curve/new-key-pair)
+        _ (println "Keys generated")
         ctx (cljeromq/context 1)
         in (cljeromq/socket! ctx :dealer)
         id-string "basic router/dealer encryption check"]
-    (println "Encrypted router-dealer inproc test")
+    (println "Basic environment set up")
     (try
-      (curve/prepare-client-socket-for-server! in client-keys (:private server-keys))
+      ;; Note that, at least in 4.0, CURVE is very specifically only applied to TCP sockets
+      (curve/prepare-client-socket-for-server! in client-keys (byte-array (range 40)))
       (cljeromq/identify! in id-string)
       (cljeromq/bind! in "inproc://encrypted-router<->dealer")
       (try
         (let [out (cljeromq/socket! ctx :router)]
           (try
-            (curve/make-socket-a-server! out (:private server-keys))
+            (curve/make-socket-a-server! out server-keys)
             (cljeromq/connect! out "inproc://encrypted-router<->dealer")  ; Much more realistic for this to bind.
             (try
               (run-router-dealer-test in out)
@@ -256,59 +269,63 @@ In the previous incarnation, everything except tcp seemed to work"
           (comment (cljeromq/unbind! in "inproc://encrypted-router<->dealer"))))
       (finally
         (cljeromq/close! in)
-        (cljeromq/terminate! ctx))))
-  (println "Dealer<->Router CURVE not checked"))
+        (cljeromq/terminate! ctx)))))
 
 (deftest test-encrypted-router-dealer-over-tcp
   (let [client-keys (curve/new-key-pair)
         server-keys (curve/new-key-pair)
         ctx (cljeromq/context 2)
-        in (cljeromq/socket! ctx :dealer)]
+        address "tcp://127.0.0.1:54398"
+        dealer (cljeromq/socket! ctx :dealer)]
     (try
       (println "Encrypted router-dealer TCP test")
-      ;; Q: How is this working?
-      ;; (i.e. Look at the key I'm using here
-      (curve/prepare-client-socket-for-server! in client-keys (:public server-keys))
-      (cljeromq/bind! in "tcp://*:54398")
+       (curve/prepare-client-socket-for-server! dealer client-keys (:public server-keys))
+       ;; Important note:
+       ;; It seems like it really shouldn't matter, but binding the dealer and connecting the
+       ;; router totally failed.
+      (println "Connecting the dealer")
+      (cljeromq/connect! dealer address)
       (try
-        (let [out (cljeromq/socket! ctx :router)]
+        (let [router (cljeromq/socket! ctx :router)]
           (try
-            (curve/make-socket-a-server! out (:private server-keys))
-            (cljeromq/connect! out "tcp://127.0.0.1:54398")
+            (cljeromq/set-router-mandatory! router)
+            (println "Making the router a CURVE server")
+            (curve/make-socket-a-server! router server-keys)
+            (cljeromq/bind! router address)
             (println "Sockets bound/connected. Beginning test")
             (try
-              (run-router-dealer-test in out)
+              (run-router-dealer-test dealer router)
               (finally
-                (cljeromq/disconnect! out "tcp://127.0.0.1:54398")))
+                (cljeromq/unbind! router address)))
             (finally
-              (cljeromq/close! out))))
-        (finally (cljeromq/unbind! in "tcp://*:54398")))
+              (cljeromq/close! router))))
+        (finally (cljeromq/disconnect! dealer address)))
       (finally
-        (cljeromq/close! in)
+        (cljeromq/close! dealer)
         (cljeromq/terminate! ctx)))))
 
 (deftest test-unencrypted-router-dealer-over-tcp
   "Translated directly from the jzmq unit test"
   (let [ctx (cljeromq/context 1)
-        in (cljeromq/socket! ctx :dealer)]
+        dealer (cljeromq/socket! ctx :dealer)]
     (try
-      (println "Unencrypted router/dealer over TCP")
-      (cljeromq/bind! in "tcp://*:54398")
+      (println "\nUnencrypted router/dealer over TCP")
+      (cljeromq/bind! dealer "tcp://*:54398")
 
       (try
-        (let [out (cljeromq/socket! ctx :router)]
-          (is out "Router creation failed")
-          (cljeromq/set-router-mandatory! out)
-          (cljeromq/connect! out "tcp://127.0.0.1:54398")
+        (let [router (cljeromq/socket! ctx :router)]
+          (is router "Router creation failed")
+          (cljeromq/set-router-mandatory! router)
+          (cljeromq/connect! router "tcp://127.0.0.1:54398")
           (try
-            (run-router-dealer-test in out)
+            (run-router-dealer-test dealer router)
             (finally
-              (cljeromq/disconnect! out "tcp://127.0.0.1:54398")
-              (cljeromq/close! out))))
+              (cljeromq/disconnect! router "tcp://127.0.0.1:54398")
+              (cljeromq/close! router))))
         (finally
-          (cljeromq/unbind! in "tcp://*:54398")))
+          (cljeromq/unbind! dealer "tcp://*:54398")))
       (finally
-        (cljeromq/close! in)
+        (cljeromq/close! dealer)
         (cljeromq/terminate! ctx)))))
 
 (deftest minimal-curveless-communication-test

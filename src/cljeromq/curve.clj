@@ -44,19 +44,28 @@ array if you need that.
 e.g.
 ;; (def s (String. (.array buffer)))"
   []
-  (let [key-length (-> K/const :curve :key-length)
-        public-key (CharBuffer/allocate key-length)
-        private-key (CharBuffer/allocate key-length)
-        pair (ZMQ/zmq_curve_keypair public-key private-key)]
-       {:public (char-buffer->byte-array public-key)
-        :private (char-buffer->byte-array private-key)}))
+  (println "Generating a CURVE key pair")
+  (let [text-key-length (-> K/const :curve :text-key-length inc)
+        public-key-text (CharBuffer/allocate text-key-length)
+        private-key-text (CharBuffer/allocate text-key-length)
+        text-pair (ZMQ/zmq_curve_keypair public-key-text private-key-text)]
+    (assert (not= (into [] public-key-text) (into [] private-key-text)))
+    (println "Decoding that key pair")
+    (let [binary-key-length (-> K/const :curve :binary-key-length)
+          public-key (byte-array binary-key-length)
+          private-key (byte-array binary-key-length)]
+      (ZMQ/zmq_z85_decode public-key (.toString public-key-text))
+      (ZMQ/zmq_z85_decode private-key (.toString private-key-text))
+      (println "Key Pair generated successfully")
+      {:public public-key
+       :private private-key})))
 
 (s/defn make-socket-a-server!
   "Adjust sock so that it's ready to serve CURVE-encrypted messages.
 Documentation seems fuzzy about whether or not it also needs to set
 the public key."
   [sock :- cljeromq/Socket
-   private-key :- byte-array-type]
+   curve-keys :- key-pair]
 
   ;; TODO: Move this comment into jzmq
   ;; official tests also set the ZMQ_IDENTITY option.
@@ -72,8 +81,9 @@ the public key."
   ;; are full of complaints about how this *should*
   ;; work and confusion over how it actually does.
   ;; So...probably a good idea to do, at least in theory.
-  (cljeromq/set-socket-option! sock :curve-server true)
-  (cljeromq/set-socket-option! sock :curve-private-key private-key))
+  (cljeromq/set-socket-option! sock :curve-private-key (:private curve-keys))
+  (cljeromq/set-socket-option! sock :curve-public-key (:public curve-keys))
+  (cljeromq/set-socket-option! sock :curve-server true))
 
 (s/defn ^:always-validate prepare-client-socket-for-server!
   "Adjust socket options to make it suitable for connecting as
