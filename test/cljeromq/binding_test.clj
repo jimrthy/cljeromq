@@ -281,25 +281,23 @@ In the previous incarnation, everything except tcp seemed to work"
       (println "Encrypted router-dealer TCP test")
        (curve/prepare-client-socket-for-server! dealer client-keys (:public server-keys))
        ;; Important note:
-       ;; It seems like it really shouldn't matter, but binding the dealer and connecting the
-       ;; router totally failed.
-      (println "Connecting the dealer")
-      (cljeromq/connect! dealer address)
+      (println "Binding the dealer")
+      (cljeromq/bind! dealer address)
       (try
         (let [router (cljeromq/socket! ctx :router)]
           (try
             (cljeromq/set-router-mandatory! router)
             (println "Making the router a CURVE server")
             (curve/make-socket-a-server! router server-keys)
-            (cljeromq/bind! router address)
+            (cljeromq/connect! router address)
             (println "Sockets bound/connected. Beginning test")
             (try
               (run-router-dealer-test dealer router)
               (finally
-                (cljeromq/unbind! router address)))
+                (cljeromq/disconnect! router address)))
             (finally
               (cljeromq/close! router))))
-        (finally (cljeromq/disconnect! dealer address)))
+        (finally (cljeromq/unbind! dealer address)))
       (finally
         (cljeromq/close! dealer)
         (cljeromq/terminate! ctx)))))
