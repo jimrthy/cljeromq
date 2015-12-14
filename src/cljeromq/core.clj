@@ -380,10 +380,10 @@ Returns the port number"
 (s/defn unbind!
   [socket :- Socket
    url :- s/Str]
-  ;; TODO: Check the protocol.
-  ;; If it's inproc, just skip the inevitable
-  ;; failure and pretend everything was kosher.
-  ;; Q: Could that cause problems?
+  ;; TODO: Check for wild-card binding.
+  ;; If the url is something like "tcp://*:1234",
+  ;; get the ZMQ_LAST_ENDPOINT sockopt and unbind from it
+  ;; instead.
   (wrap-0mq-boolean-fn-call #(ZMQ/zmq_unbind socket url)
                     "Unable to release socket binding"))
 
@@ -523,9 +523,9 @@ Returns the port number"
 
 (defmethod send! :default
   ([socket message flags]
-   (comment)
-   (println "Default Send trying to transmit:\n" message "\n(a"
-            (class message) ")")
+   (comment
+     (println "Default Send trying to transmit:\n" message "\n(a"
+              (class message) ")"))
    (if (nil? message)
      (send! socket (byte-array 0) flags)
      ;; For now, assume that we'll only be transmitting something

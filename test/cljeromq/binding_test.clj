@@ -1,7 +1,8 @@
 (ns cljeromq.binding-test
   (:import [clojure.lang ExceptionInfo]
            [org.zeromq.jni ZMQ])
-  (:require [clojure.test :refer :all]
+  (:require [clojure.pprint :refer (pprint)]
+            [clojure.test :refer :all]
             [cljeromq.core :as cljeromq]
             [cljeromq.curve :as curve]))
 
@@ -314,7 +315,16 @@ In the previous incarnation, everything except tcp seemed to work"
               (cljeromq/disconnect! router "tcp://127.0.0.1:54398")
               (cljeromq/close! router))))
         (finally
-          (cljeromq/unbind! dealer "tcp://*:54398")))
+          ;; Q: Why is this failing?
+          ;; A: Because you can't unbind from a wild-card socket
+          ;; directly.
+          (try
+            (cljeromq/unbind! dealer "tcp://*:54398")
+            (catch ExceptionInfo ex
+              (let [details (.getData ex)]
+                (println "Unbinding the unencrypted dealer failed:\n")
+                (pprint details)
+                (throw ex))))))
       (finally
         (cljeromq/close! dealer)
         (cljeromq/terminate! ctx)))))

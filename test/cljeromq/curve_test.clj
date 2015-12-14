@@ -21,6 +21,9 @@ It would be nice if library users could stick to this level of abstraction"
 
       (let [msg "Unencrypted push"
             push-thread (future (push-unencrypted ctx msg))]
+        ;; We're hanging up on this test now.
+        ;; Q: Huh?
+        (throw (RuntimeException. "Start Here"))
         (dotimes [i 10]
           (is (= (mq/recv! puller) (str msg i))
               "Didn't pull what was pushed"))
