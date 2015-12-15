@@ -7,6 +7,7 @@
             [cljeromq.curve :as curve]))
 
 (deftest req-rep-inproc-unencrypted-handshake
+  (println "REQ/REP inproc handshake")
   (testing "Basic inproc req/rep handshake test"
     (let [uri "inproc://a-test-1"
           ctx (cljeromq/context 1)]
@@ -45,6 +46,7 @@
 
 (deftest simplest-tcp-test
   (testing "TCP REP/REQ handshake"
+    (println "REP/REQ handshake over TCP")
     (let [uri "tcp://127.0.0.1:8592"
           ctx (cljeromq/context 1)]
       (println "Basic rep/req unencrypted TCP test")
@@ -77,6 +79,7 @@
 
 (deftest create-curve-sockets-test
   (testing "Slap together basic low level server socket options. Mostly to see how it works under the covers"
+    (println "Low-level CURVE creation")
     (let [server-keys (curve/new-key-pair)
           server-public (:public server-keys)
           server-secret (:private server-keys)
@@ -122,7 +125,7 @@
         ctx (cljeromq/context 1)
         in (cljeromq/socket! ctx :req)]
     (try
-      (println "Encrypted req/rep inproc test")
+      (println "[not] Encrypted req/rep inproc test")
       (curve/prepare-client-socket-for-server! in client-keys (:public server-keys))
       (cljeromq/bind! in "inproc://reqrep")
 
@@ -169,6 +172,7 @@
         pull (cljeromq/socket! ctx :pull)
         address "tcp://127.0.0.1:52711"]
     (try
+      (cljeromq/set-time-out! pull 200)
       (curve/make-socket-a-server! pull server-keys)
       (cljeromq/bind! pull address)
       (try
@@ -315,10 +319,9 @@ In the previous incarnation, everything except tcp seemed to work"
               (cljeromq/disconnect! router "tcp://127.0.0.1:54398")
               (cljeromq/close! router))))
         (finally
-          ;; Q: Why is this failing?
-          ;; A: Because you can't unbind from a wild-card socket
-          ;; directly.
           (try
+            ;; This is still failing
+            ;; Q: Why?
             (cljeromq/unbind! dealer "tcp://*:54398")
             (catch ExceptionInfo ex
               (let [details (.getData ex)]
@@ -332,6 +335,7 @@ In the previous incarnation, everything except tcp seemed to work"
 (deftest minimal-curveless-communication-test
   (testing "Because communication is boring until the principals can swap messages"
     ;; Both threads block at receiving. Have verified that this definitely works in python
+    (println "Minimal unencrypted router/dealer test")
     (let [ctx (cljeromq/context 1)]
       (try
         (let [router (cljeromq/socket! ctx :rep)]

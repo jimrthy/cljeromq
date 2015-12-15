@@ -199,9 +199,9 @@
     (core/with-socket [nothing ctx :rep]
       (let [addr "tcp://*:5678"]
         (core/bind! nothing addr)
-        (println "Have a socket bound")
-        ;; This is failing
-        ;; Q: Why?
+        (core/unbind! nothing addr))
+      (let [addr "tcp://127.0.0.1:28932"]
+        (core/bind! nothing addr)
         (core/unbind! nothing addr)))))
 
 (deftest string->bytes->string []

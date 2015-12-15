@@ -53,6 +53,10 @@ to make swapping back and forth seamless."
 ;;; java names everywhere
 
 (def Context long)
+;; TODO: Change this to a map. I really want to
+;; attach metadata
+;; Then again, that may be needless complexity if
+;; I can avoid it
 (def Socket long)
 
 (def InternalPair
@@ -206,7 +210,18 @@ to make swapping back and forth seamless."
    (let [real-option (K/option->const option)]
      (wrap-0mq-byte-array-fn-call #(ZMQ/zmq_getsockopt_bytes sock real-option)
                                   error-message
-                                  base-error-map))))
+                                  base-error-map)))
+  ([sock :- Socket
+    option :- s/Keyword
+    error-message :- s/Str]
+   (get-bytes-socket-option sock option error-message {}))
+  ([sock :- Socket
+    option :- s/Keyword]
+   ;; It doesn't matter that the current implementation really can't
+   ;; ever fail
+   (get-bytes-socket-option sock
+                            option
+                            "Unable to retrieve byte array socket option")))
 
 (s/defn ^:always-validate get-long-socket-option :- s/Int
   ([sock :- Socket
@@ -410,7 +425,8 @@ Returns the port number"
               (String. (get-bytes-socket-option socket :last-end-point)))]
 
     (wrap-0mq-boolean-fn-call #(ZMQ/zmq_unbind socket url)
-                              "Unable to release socket binding")))
+                              "Unable to release socket binding"
+                              {:socket socket, :url url})))
 
 (s/defn bound-socket! :- Socket
   "Return a new socket bound to the specified address"
