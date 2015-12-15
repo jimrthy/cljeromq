@@ -31,6 +31,7 @@ to make swapping back and forth seamless."
   (:refer-clojure :exclude [proxy send])
   (:require [cljeromq.constants :as K]
             [clojure.edn :as edn]
+            [clojure.string]
             [ribol.core :refer (raise)]
             [schema.core :as s])
   (:import [clojure.lang ExceptionInfo]
@@ -150,6 +151,18 @@ to make swapping back and forth seamless."
    ;; in most cases
    (wrap-0mq-boolean-fn-call f error-msg {})))
 
+(s/defn wrap-0mq-byte-array-fn-call :- byte-array-class
+  "TODO: Either prefix these w/ do- or add a ! suffix"
+  ([f
+    error-msg :- s/Str
+    base-exception-map :- {s/Any s/Any}]
+   (io! (f)))
+  ([f
+    error-msg :- s/Str]
+   ;; Because this is really probably all we care about
+   ;; in most cases
+   (wrap-0mq-byte-array-fn-call f error-msg {})))
+
 (s/defn ^:always-validate set-socket-option!
   [s :- Socket
    option    ; :- (s/either s/Int s/Keyword)
@@ -184,6 +197,16 @@ to make swapping back and forth seamless."
                     {:context ctx
                      :option option
                      :value value}))
+
+(s/defn ^:always-validate get-bytes-socket-option :- byte-array-class
+  ([sock :- Socket
+    option :- s/Keyword
+    error-message :- s/Str
+    base-error-map :- {s/Any s/Any}]
+   (let [real-option (K/option->const option)]
+     (wrap-0mq-byte-array-fn-call #(ZMQ/zmq_getsockopt_bytes sock real-option)
+                                  error-message
+                                  base-error-map))))
 
 (s/defn ^:always-validate get-long-socket-option :- s/Int
   ([sock :- Socket
@@ -380,12 +403,14 @@ Returns the port number"
 (s/defn unbind!
   [socket :- Socket
    url :- s/Str]
-  ;; TODO: Check for wild-card binding.
-  ;; If the url is something like "tcp://*:1234",
-  ;; get the ZMQ_LAST_ENDPOINT sockopt and unbind from it
-  ;; instead.
-  (wrap-0mq-boolean-fn-call #(ZMQ/zmq_unbind socket url)
-                    "Unable to release socket binding"))
+  ;; Wild card bindings need extra special care
+  (let [parts (clojure.string/split url #":")
+        url (if (not= (parts 1) "//*")
+              url
+              (String. (get-bytes-socket-option socket :last-end-point)))]
+
+    (wrap-0mq-boolean-fn-call #(ZMQ/zmq_unbind socket url)
+                              "Unable to release socket binding")))
 
 (s/defn bound-socket! :- Socket
   "Return a new socket bound to the specified address"

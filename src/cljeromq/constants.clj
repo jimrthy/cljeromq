@@ -58,6 +58,7 @@ Although, really, that's almost pedantic."
                     ;; The client's what needs this.
                     :curve-server-key ZMQ/CURVE_SERVERKEY     ; 50
                     :identity ZMQ/IDENTITY                    ; 5
+                    :last-end-point ZMQ/LAST_ENDPOINT
                     :linger ZMQ/LINGER
                     :receive-more ZMQ/RCVMORE                 ; 13
                     :receive-time-out ZMQ/RCVTIMEO
