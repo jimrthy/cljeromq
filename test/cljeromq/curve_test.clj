@@ -23,7 +23,6 @@ It would be nice if library users could stick to this level of abstraction"
             push-thread (future (push-unencrypted ctx msg))]
         ;; We're hanging up on this test now.
         ;; Q: Huh?
-        (throw (RuntimeException. "Start Here"))
         (dotimes [i 10]
           (is (= (mq/recv! puller) (str msg i))
               "Didn't pull what was pushed"))
@@ -36,7 +35,7 @@ It would be nice if library users could stick to this level of abstraction"
     (enc/make-socket-a-server! pusher server-keys)
     (mq/bind! pusher  "tcp://127.0.0.1:2101")
     (dotimes [i 10]
-      (comment (println "Pushing encrypted packet " (inc i)))
+      (comment) (println "Pushing encrypted packet " (inc i))
       (mq/send! pusher (str msg i) 0))))
 
 (deftest basic-socket-encryption []
@@ -54,10 +53,10 @@ It would be nice if library users could stick to this level of abstraction"
 
           (try
             (dotimes [i 10]
-              (comment (println "Pulling Encrypted Packet # " (inc i)))
+              (comment) (println "Pulling Encrypted Packet # " (inc i))
               (let [received (try
                                (let [received (mq/recv! puller 0)]
-                                 (comment (println "Received: " received))
+                                 (comment) (println "Received: " received)
                                  received)
                                (catch ExceptionInfo ex
                                  (println "Encrypted Receive failed")
@@ -66,4 +65,5 @@ It would be nice if library users could stick to this level of abstraction"
                        received)
                     "Didn't pull what was pushed")))
             (finally (mq/disconnect! puller "tcp://127.0.0.1:2101")))
+          (println "Waiting for pushing thread to exit")
           (is (nil? @push-thread) "How did this get broken?"))))))
