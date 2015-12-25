@@ -749,7 +749,9 @@ That's how this is really meant to be used, if you can trust your peers."
   "Return a new PollItemArray instance.
 Callers probably shouldn't be using something this low-level.
 Except when they need to.
-There doesn't seem any good reason to put effort into hiding it."
+There doesn't seem any good reason to put effort into hiding it.
+
+Q: What should they/I be using instead?"
   [socket-count :- s/Int]
   (PollItemArray/allocatePollItems socket-count))
 
