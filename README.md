@@ -2,50 +2,35 @@
 
 My incarnation of clojure bindings for zeromq.
 
-Or something in that vicinity. It gets complicated.
-
-For now, this is really trying to find a balance between
-my work on frereth and a presentation for the Austin
-Clojure Group (yes, that should be a link).
+Or something along those lines. It gets complicated.
 
 ## Installation
 
-This is really sort of a <s>bitch</s> <s>pain in the ass</s>
-painful exercise in patience.
+Clone this repo and run
 
-I had to get advice from the #clojure irc channel to get
-this working. Probably because I'm such a n00b.
+    lein install
 
-Then again, it involves native interop, so maybe I deserve
-a little slack.
-
-Surely I jotted down at least a few notes somewhere.
+I should probably publish it on clojars, but it isn't exactly
+stable.
 
 ## Usage
 
-After you get the native dependencies installed, you
-really should follow along with the official guide:
-http://zguide.zeromq.org/page:all
-
-Actually, if you have any interest at all, just buy it.
-It probably doesn't qualify as a classic, but it's pretty
-close.
-
-For a tech book, it's extremely well-written and readable.
-
 In general:
-
-I need to put this library on clojars. Then I need to document
-the basic ideas.
 
 1) Create a context in each process
 2) Create sockets
+  Read the 0mq guide at http://zguide.zeromq.org/page:all
+  My $0.02 summary:
   a) Req/Rep -- not really
-  b) Sub/Pub
-  c) Push/Pull
-  d) Router/Dealer
-  e) Pair -- well, maybe
-3) Profit.
+  b) Sub/Pub -- For multicasting
+  c) Push/Pull -- round-robin
+  d) Router/Dealer - Pure asynchronous on 
+  e) Pair -- great for inproc things like thread coordination
+3) Build your messaging protocol.
+  Again, read the guide.
+  There's a zproto library that might be worth using. I've
+  never had a chance to test-drive it, but I've read a lot
+  of good things about it.
 
 
 ## Options
@@ -54,8 +39,7 @@ FIXME: listing of options this app accepts.
 
 ## Examples
 
-This really fits in with the Guide. Which I should probably try
-to merge request into.
+This really fits in with the Guide.
 
 ### Bugs
 
@@ -69,7 +53,30 @@ How could there possibly be anything wrong?
 
 ## License
 
-Copyright © 2013 James Gatannah
+Copyright © 2013-2016 James Gatannah
 
-Distributed under the LGPL. What do I need to do to make that
-legal?
+I want to give this the most permissive license possible.
+
+It's basically a wrapper around zmq-jni, which uses the Mozilla
+Public License.
+
+That's really just a wrapper over 0mq, which is LGPL, with an
+exception that I think makes this legal.
+
+Whichever license this actually has to used based on those
+constraints must also be compatible with the Eclipse Public
+License, since that's pretty much every clojure library on
+the planet.
+
+I'm not a lawyer. I want you to use this library. If you do,
+please let me know so we can figure out how to work out the
+rough edges.
+
+Whichever license winds up controlling this thing, it's going
+to have clauses about absolutely no warranty and you not
+suing me.
+
+This is just part of a project that I'm dabbling with in my
+spare time that might possibly be useful to others.
+
+
