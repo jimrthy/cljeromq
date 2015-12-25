@@ -59,6 +59,10 @@ to make swapping back and forth seamless."
 ;; I can avoid it
 (def Socket long)
 
+;; This is wrong. But I'm trying to minimize changes to
+;; existing client code.
+(def Poller PollItemArray)
+
 (def InternalPair
   "I don't like these names. But I really have to pick something arbitrary"
   {:lhs Socket
