@@ -109,6 +109,12 @@ Although, really, that's almost pedantic."
    :flag
    {:edn "clojure/edn"}})
 
+(s/defn section-flag->const :- s/Int
+  "Base conversion function to build on below"
+  [section :- s/Keyword
+   key :- s/Keyword]
+  (-> section const key))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Public
 
@@ -116,7 +122,11 @@ Although, really, that's almost pedantic."
   "Convert a control keyword to a ZMQ constant"
   [key :- s/Keyword]
   (comment (println "Extracting " key))
-  ((const :control) key))
+  (section-flag->const :control key))
+
+(s/defn error->const :- s/Int
+  [flag :- s/Keyword]
+  (section-flag->const :error flag))
 
 (s/defn flags->const :- s/Int
   "Use in conjunction with control-const to convert a series
@@ -135,25 +145,19 @@ socket options."
                               (map control->const flags))
                       (control->const flags))]
       result
-      ;; Actually, this is totally legit
-      #_(throw (ex-info "NULL flags specified"
-                      {:requested flags}))
+      ;; Note that NULL flags is totally legit...
+      ;; but we really do want 0 rather than nil
       0)))
-
-(s/defn sock->const :- s/Int
-  "Convert a socket keyword to a ZMQ constant"
-  [key :- s/Keyword]
-  ((const :socket-type) key))
 
 (s/defn option->const :- s/Int
   "Convert a keyword naming a socket option to a ZMQ constant"
   [name :- s/Keyword]
-  (-> :socket-options const name))
+  (section-flag->const :socket-options name))
 
 (defn poll-opts
   [korks]
   (if (keyword? korks)
-    (-> const :polling korks)
+    (section-flag->const :polling korks)
     (let [current (first korks)
           base (poll-opts current)
           remainder (next korks)]
@@ -161,6 +165,11 @@ socket options."
         (bit-or base
             (poll-opts (rest korks)))
         base))))
+
+(s/defn sock->const :- s/Int
+  "Convert a socket keyword to a ZMQ constant"
+  [key :- s/Keyword]
+  (section-flag->const :socket-type key))
 
 (s/defn version :- {:major s/Int
                     :minor s/Int
@@ -173,6 +182,8 @@ socket options."
            patch (ZMQ/getPatchVersion)]
        {:major major :minor minor :patch patch}))
   ;; FIXME: This is obviously wrong
+  ;; TODO: Fix it
+  ;; (it should be really low-hanging fruit. Issue #1)
   {:major (ZMQ/version)
    :minor 0
    :patch 0})
