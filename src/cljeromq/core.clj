@@ -147,6 +147,7 @@ to make swapping back and forth seamless."
   ([f
     error-msg :- s/Str
     base-exception-map :- {s/Any s/Any}]
+   (println "Trying to call a 0mq numeric function " f)
    (let [success (io! (f))]
      (when (< success 0)
        (throw (add-error-detail error-msg base-exception-map)))
@@ -157,7 +158,7 @@ to make swapping back and forth seamless."
     error-msg :- s/Str]
    ;; Because this is really probably all we care about
    ;; in most cases
-   (wrap-0mq-boolean-fn-call f error-msg {})))
+   (wrap-0mq-numeric-fn-call f error-msg {})))
 
 (s/defn wrap-0mq-byte-array-fn-call :- byte-array-class
   "TODO: Either prefix these w/ do- or add a ! suffix"
@@ -546,7 +547,7 @@ Returns the port number"
 (defmethod send! String
   ([socket ^String message flags]
    ;; FIXME: Debug only
-   (comment (println "Sending string:\n" message "\nwith flags: " flags))
+   (comment) (println "cljeromq Sending string:\n" message "\nwith flags: " flags)
    ;; My original plan was that this would convert the string
    ;; to clojure.core$bytes, so it would call the method above
    (send! socket (.getBytes message) flags))
@@ -562,15 +563,15 @@ Returns the port number"
    ;; offset - where the message starts in that array?
    ;; number of bytes to send
    ;; flags
-   (comment (println "Sending a " (count message) " byte array with flags: " flags))
+   (comment) (println "cljeromq Sending a " (count message) " byte array with flags: " flags)
    (wrap-0mq-numeric-fn-call #(ZMQ/zmq_send socket message 0 (count message) (K/flags->const flags))
                              "Sending a byte array failed")))
 
 (defmethod send! :default
   ([socket message flags]
-   (comment
-     (println "Default Send trying to transmit:\n" message "\n(a"
-              (class message) ")"))
+   (comment)
+   (println "cljeromq Default Send trying to transmit:\n" message "\n(a"
+            (class message) ")")
    (if (nil? message)
      (send! socket (byte-array 0) flags)
      ;; For now, assume that we'll only be transmitting something
@@ -656,7 +657,14 @@ with core clojure functionality"
      (comment (println "Receiving from socket (flags:" flags ")"))
      ;; Q: How do I know whether this failed?
      ;; A: At the moment, there really isn't any way
-     (ZMQ/zmq_recv socket flags)))
+     (ZMQ/zmq_recv socket flags)
+     (let [errno (ZMQ/zmq_errno)]
+       (when (not= errno 0)
+         (println "Read failure (may be expected):" errno)
+         (throw (ex-info (ZMQ/zmq_strerror errno) {:problem "Trying to receive"
+                                                   :error-number errno
+                                                   :flags flags
+                                                   :socket socket}))))))
   ([socket :- Socket]
    (comment (println "Parameterless raw-recv"))
    (raw-recv! socket :wait)))
@@ -789,6 +797,8 @@ Seems almost totally pointless, given the current implementation"
 
 (s/defn socket-poller :- PollItemArray
   ;; The values in this map are really korks
+  ;; that indicate which event(s) to poll on
+  ;; for any given socket
   ;; TODO: What does the Schema look like for that now?
   [socks :- {Socket [s/Keyword]}]
   (let [length (count socks)
