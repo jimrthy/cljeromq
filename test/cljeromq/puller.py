@@ -2,7 +2,7 @@
 
 import zmq
 
-class EncryptedPushTester(object):
+class EncryptedPullTester(object):
     def __init__(self, server_key):
         self.url = "tcp://127.0.0.1:2111"
         self.ctx = zmq.Context(2)

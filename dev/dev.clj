@@ -7,7 +7,8 @@
             [clojure.pprint :refer (pprint)]
             [clojure.repl :refer :all]
             [clojure.test :as test]
-            [clojure.tools.namespace.repl :refer (refresh refresh-all)]))
+            [clojure.tools.namespace.repl :refer (refresh refresh-all)])
+  (:import [org.zeromq ZMQ]))
 
 (comment
   (def system nil)
@@ -58,6 +59,10 @@
 (comment)
 (def pusher (mq/socket! ctx :push))
 (def puller (mq/socket! ctx :pull))
+;; Plain-text inproc works fine.
+;; Then again, so does plain-text TCP
+;; Q: What about encrypted inproc, as silly as
+;; that would be?
 (comment (mq/bind! puller "inproc://dev-test")
          (mq/connect! pusher "inproc://dev-test"))
 ;; Make this constant for testing out python interop
@@ -66,8 +71,10 @@
   (def server-keys {:public (.getBytes public)
                     :private (.getBytes private)}))
 (def client-keys (enc/new-key-pair))
-(comment (enc/prepare-client-socket-for-server! puller client-keys (:public server-keys))
-         (enc/make-socket-a-server! pusher (:private server-keys)))
+(comment)
+(enc/prepare-client-socket-for-server! puller client-keys (:public server-keys))
+(enc/make-socket-a-server! pusher (:private server-keys))
+
 (mq/bind! puller "tcp://127.0.0.1:2111")
 (mq/connect! pusher "tcp://127.0.0.1:2111")
 (def push-future (future (mq/send! pusher "Push Test" 0)
