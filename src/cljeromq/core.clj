@@ -32,7 +32,7 @@ to make swapping back and forth seamless."
   (:require [cljeromq.constants :as K]
             [clojure.edn :as edn]
             [clojure.string]
-            [ribol.core :refer (raise)]
+            [hara.event :refer (raise)]
             [schema.core :as s])
   (:import [clojure.lang ExceptionInfo]
            [java.net InetAddress]
