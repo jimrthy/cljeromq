@@ -127,13 +127,17 @@
     (try
       (println "[not] Encrypted req/rep inproc test")
       (comment (curve/prepare-client-socket-for-server! client client-keys (:public server-keys)))
-      (cljeromq/bind! client "inproc://reqrep")
 
       (try
         (let [server (cljeromq/socket! ctx :rep)]
           (try
             (comment (curve/make-socket-a-server! server server-keys))
-            (cljeromq/connect! server "inproc://reqrep")
+            ;; Should be able to bind/connect in either direction/order...right?
+            (comment
+              (cljeromq/bind! server "inproc://reqrep")
+              (cljeromq/connect! client "inproc://reqrep"))
+            (cljeromq/bind! server "tcp://*:6001")
+            (cljeromq/connect! client "tcp://localhost:6001")
 
             (try
               (dotimes [n 10]
