@@ -566,7 +566,15 @@ Returns the port number"
    ;; flags
    (comment) (println "cljeromq Sending a " (count message) " byte array with flags: " flags)
    (wrap-0mq-numeric-fn-call #(ZMQ/zmq_send socket message 0 (count message) (K/flags->const flags))
-                             "Sending a byte array failed")))
+                             "Sending a byte array failed")
+   ;; Note that my reasoning behind safe_recv applies even more thoroughly here.
+   (let [errno (ZMQ/zmq_errno)]
+     (when (not= errno 0)
+       (println "Write failure (probably not expected):" errno)
+       (throw (ex-info (ZMQ/zmq_strerror errno) {:problem "Trying to receive"
+                                                 :error-number errno
+                                                 :flags flags
+                                                 :socket socket}))))))
 
 (defmethod send! :default
   ([socket message flags]
@@ -660,6 +668,8 @@ with core clojure functionality"
      ;; A: At the moment, there really isn't any way
      (ZMQ/zmq_safe_recv socket flags)
      (let [errno (ZMQ/zmq_errno)]
+       ;; Note that the entire point to zmq_safe_recv is that I don't want
+       ;; an extra JNI round trip here just to check success.
        (when (not= errno 0)
          (println "Read failure (may be expected):" errno)
          (throw (ex-info (ZMQ/zmq_strerror errno) {:problem "Trying to receive"

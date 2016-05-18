@@ -133,9 +133,7 @@
           (try
             (comment (curve/make-socket-a-server! server server-keys))
             ;; Should be able to bind/connect in either direction/order...right?
-            (comment
-              (cljeromq/bind! server "inproc://reqrep")
-              (cljeromq/connect! client "inproc://reqrep"))
+            ;; TODO: Switch back to binding the client first and then connecting the server
             (cljeromq/bind! server "tcp://*:6001")
             (cljeromq/connect! client "tcp://localhost:6001")
 
@@ -144,6 +142,8 @@
                 (let [req (.getBytes (str "request" n))
                       rep (.getBytes (str "reply" n))]
                   (comment (println n))
+                  ;; TODO: Move this call into a future and have it block.
+                  ;; Or something along those lines
                   (let [success (cljeromq/send! client req 0)]
                     (when-not success
                       (println "Sending request returned:" success)
@@ -152,7 +152,10 @@
                   (try
                     ;; This should block until we receive something...right?
                     ;; (A: Yes. DONTWAIT == 1)
-                    ;; Note that we just successfully sent the initial req directly above
+                    ;; Note that we just successfully sent the initial req directly above.
+                    ;; Q: Are we really?
+                    ;; Note that this call should now be throwing a RuntimeException
+                    ;; when it fails.
                     (let [response (cljeromq/recv! server 0)]
                       (is (= (String. req) (String. response))))
                     (try
@@ -170,10 +173,10 @@
                       ;; Lots of things could go wrong there.
                       ;; This should not be one of them.
                       (is false (.getData ex))))))
-              (finally (cljeromq/disconnect! server "inproc://reqrep")))
+              (finally (cljeromq/unbind! server "tcp://*:6001")))
             (finally (cljeromq/close! server))))
         (finally
-          (cljeromq/unbind! client "inproc://reqrep")))
+          (cljeromq/disconnect! client "tcp://localhost:6001")))
       (finally
         (cljeromq/close! client)
         (cljeromq/terminate! ctx)))))
