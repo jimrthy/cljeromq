@@ -123,44 +123,55 @@
   (let [client-keys (curve/new-key-pair)
         server-keys (curve/new-key-pair)
         ctx (cljeromq/context 1)
-        in (cljeromq/socket! ctx :req)]
+        client (cljeromq/socket! ctx :req)]
     (try
       (println "[not] Encrypted req/rep inproc test")
-      (curve/prepare-client-socket-for-server! in client-keys (:public server-keys))
-      (cljeromq/bind! in "inproc://reqrep")
+      (comment (curve/prepare-client-socket-for-server! client client-keys (:public server-keys)))
+      (cljeromq/bind! client "inproc://reqrep")
 
       (try
-        (let [out (cljeromq/socket! ctx :rep)]
+        (let [server (cljeromq/socket! ctx :rep)]
           (try
-            (curve/make-socket-a-server! out server-keys)
-            (cljeromq/connect! out "inproc://reqrep")
+            (comment (curve/make-socket-a-server! server server-keys))
+            (cljeromq/connect! server "inproc://reqrep")
 
             (try
               (dotimes [n 10]
                 (let [req (.getBytes (str "request" n))
                       rep (.getBytes (str "reply" n))]
                   (comment (println n))
-                  (let [success (cljeromq/send! in req 0)]
+                  (let [success (cljeromq/send! client req 0)]
                     (when-not success
                       (println "Sending request returned:" success)
                       ;; Q: Is there any point to this approach now?
                       (is false "Should have thrown an exception on failure")))
-                  (let [response (cljeromq/recv! out 0)]
-                    (is (= (String. req) (String. response))))
-
-                  (let [success (cljeromq/send! out (String. rep))]
-                    (when-not success
-                      (println "Error sending Reply: " success)
-                      ;; Another absolutely meaningless test
-                      (is (or false true))))
-                  (let [response (cljeromq/recv! in 0)]
-                    (is (= (String. rep) (String. response))))))
-              (finally (cljeromq/disconnect! out "inproc://reqrep")))
-            (finally (cljeromq/close! out))))
+                  (try
+                    ;; This should block until we receive something...right?
+                    ;; (A: Yes. DONTWAIT == 1)
+                    ;; Note that we just successfully sent the initial req directly above
+                    (let [response (cljeromq/recv! server 0)]
+                      (is (= (String. req) (String. response))))
+                    (try
+                      (let [success (cljeromq/send! server (String. rep))]
+                        (when-not success
+                          (println "Error sending Reply: " success)
+                          ;; Another absolutely meaningless test
+                          (is (or false true))))
+                      (try
+                        (let [response (cljeromq/recv! client 0)]
+                          (is (= (String. rep) (String. response))))
+                        (catch ExceptionInfo ex
+                          (is (not (.getData ex))))))
+                    (catch ExceptionInfo ex
+                      ;; Lots of things could go wrong there.
+                      ;; This should not be one of them.
+                      (is false (.getData ex))))))
+              (finally (cljeromq/disconnect! server "inproc://reqrep")))
+            (finally (cljeromq/close! server))))
         (finally
-          (cljeromq/unbind! in "inproc://reqrep")))
+          (cljeromq/unbind! client "inproc://reqrep")))
       (finally
-        (cljeromq/close! in)
+        (cljeromq/close! client)
         (cljeromq/terminate! ctx)))))
 
 (deftest test-encrypted-push-pull

@@ -147,6 +147,7 @@ to make swapping back and forth seamless."
   ([f
     error-msg :- s/Str
     base-exception-map :- {s/Any s/Any}]
+   ;; FIXME: Debug only
    (println "Trying to call a 0mq numeric function " f)
    (let [success (io! (f))]
      (when (< success 0)
@@ -657,7 +658,7 @@ with core clojure functionality"
      (comment (println "Receiving from socket (flags:" flags ")"))
      ;; Q: How do I know whether this failed?
      ;; A: At the moment, there really isn't any way
-     (ZMQ/zmq_recv socket flags)
+     (ZMQ/zmq_safe_recv socket flags)
      (let [errno (ZMQ/zmq_errno)]
        (when (not= errno 0)
          (println "Read failure (may be expected):" errno)
