@@ -118,8 +118,19 @@
             (finally (cljeromq/close! router))))
         (finally (cljeromq/terminate! ctx))))))
 
+(defn send-in-future
+  [src msg]
+  (future
+    ;; Note that this should very definitely block
+    (let [success (cljeromq/send! src msg 0)]
+      (when (< success 0)
+        (println "Sending request returned:" success)
+        ;; Q: Is there any point to this approach now?
+        (is false "Should have thrown an exception on failure"))
+      success)))
+
 (deftest test-not-really-encrypted-req-rep
-  "TODO: Switch to TCP so there's a point"
+  "TODO: Restore encryption"
   (let [client-keys (curve/new-key-pair)
         server-keys (curve/new-key-pair)
         ctx (cljeromq/context 1)
@@ -144,35 +155,35 @@
                   (comment (println n))
                   ;; TODO: Move this call into a future and have it block.
                   ;; Or something along those lines
-                  (let [success (cljeromq/send! client req 0)]
-                    (when-not success
-                      (println "Sending request returned:" success)
-                      ;; Q: Is there any point to this approach now?
-                      (is false "Should have thrown an exception on failure")))
-                  (try
-                    ;; This should block until we receive something...right?
-                    ;; (A: Yes. DONTWAIT == 1)
-                    ;; Note that we just successfully sent the initial req directly above.
-                    ;; Q: Are we really?
-                    ;; Note that this call should now be throwing a RuntimeException
-                    ;; when it fails.
-                    (let [response (cljeromq/recv! server 0)]
-                      (is (= (String. req) (String. response))))
+                  (let [send-future (send-in-future client req)]
                     (try
-                      (let [success (cljeromq/send! server (String. rep))]
-                        (when-not success
-                          (println "Error sending Reply: " success)
-                          ;; Another absolutely meaningless test
-                          (is (or false true))))
+                      ;; This should block until we receive something...right?
+                      ;; (A: Yes. DONTWAIT == 1)
+                      ;; Note that we just successfully sent the initial req directly above.
+                      ;; Q: Are we really?
+                      ;; Note that this call should now be throwing a RuntimeException
+                      ;; when it fails.
+                      (let [response (cljeromq/recv! server 0)]
+                        (is (= (String. req) (String. response))))
+                      ;; TODO: Verify that send-future has been realized
+                      (is (>= @send-future 0))
                       (try
-                        (let [response (cljeromq/recv! client 0)]
-                          (is (= (String. rep) (String. response))))
-                        (catch ExceptionInfo ex
-                          (is (not (.getData ex))))))
-                    (catch ExceptionInfo ex
-                      ;; Lots of things could go wrong there.
-                      ;; This should not be one of them.
-                      (is false (.getData ex))))))
+                        (let [send-future (send-in-future server (String. rep))]
+                          (try
+                            (let [response (cljeromq/recv! client 0)]
+                              (is (= (String. rep) (String. response))))
+                            (catch ExceptionInfo ex
+                              (is (not (.getData ex)))))
+                          ;; TODO: Verify that send-future has been realized
+                          (is (>= @send-future 0))))
+                      (catch ExceptionInfo ex
+                        ;; Lots of things could go wrong there.
+                        ;; This should not be one of them.
+                        ;; However, it is.
+                        ;; Worse, the loop keeps trying to run after the test has failed.
+                        ;; Although that probably makes sense since the failure probably
+                        ;; isn't raising an exception
+                        (is false (.getData ex)))))))
               (finally (cljeromq/unbind! server "tcp://*:6001")))
             (finally (cljeromq/close! server))))
         (finally
@@ -190,6 +201,8 @@
         pull (cljeromq/socket! ctx :pull)
         address "tcp://127.0.0.1:52711"]
     (try
+      ;; This doesn't seem to work.
+      ;; Q: Why not?
       (cljeromq/set-time-out! pull 200)
       (curve/make-socket-a-server! pull server-keys)
       (cljeromq/bind! pull address)
@@ -200,11 +213,15 @@
             (cljeromq/connect! push address)
             (try
               (dotimes [n 10]
-                (let [req (.getBytes (str "request" n))
-                      rep (.getBytes (str "reply" n))]
-                  (is (cljeromq/send! push req 0) (str "Pushing failed: " (cljeromq/last-error)))
-                  (let [response (cljeromq/recv! pull 0)]
-                    (is (= (String. req) (String. response))))))
+                (testing (str "Encrypted push/pull #" n)
+                  (let [req (.getBytes (str "request" n))
+                        rep (.getBytes (str "reply" n))]
+                    (println "Encrypted Push #" n)
+                    (is (cljeromq/send! push req 0) (str "Pushing failed: " (cljeromq/last-error)))
+                    ;; Just to make sure there's plenty of time for that to get through the buffers
+                    (Thread/sleep 15)
+                    (let [response (cljeromq/recv! pull [:dont-wait])]
+                      (is (= (String. req) (String. response)))))))
               (finally (cljeromq/disconnect! push address)))
             (finally (cljeromq/close! push))))
         (finally (cljeromq/unbind! pull address)))

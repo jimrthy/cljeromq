@@ -151,6 +151,8 @@ to make swapping back and forth seamless."
    (println "Trying to call a 0mq numeric function " f)
    (let [success (io! (f))]
      (when (< success 0)
+       ;; Just to prove that this fails when appropriate
+       (comment) (println "Debug only: failure!")
        (throw (add-error-detail error-msg base-exception-map)))
      ;; Every once in a while, the return value
      ;; means something on success
@@ -571,7 +573,7 @@ Returns the port number"
    (let [errno (ZMQ/zmq_errno)]
      (when (not= errno 0)
        (println "Write failure (probably not expected):" errno)
-       (throw (ex-info (ZMQ/zmq_strerror errno) {:problem "Trying to receive"
+       (throw (ex-info (ZMQ/zmq_strerror errno) {:problem "Trying to send"
                                                  :error-number errno
                                                  :flags flags
                                                  :socket socket}))))))
