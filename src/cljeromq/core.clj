@@ -168,7 +168,9 @@ to make swapping back and forth seamless."
   ([f
     error-msg :- s/Str
     base-exception-map :- {s/Any s/Any}]
-   (io! (f)))
+   (let [success (io! (f))]
+     (when (< success 0)
+       (add-error-detail error-msg base-exception-map))))
   ([f
     error-msg :- s/Str]
    ;; Because this is really probably all we care about
@@ -572,7 +574,7 @@ Returns the port number"
    ;; Note that my reasoning behind safe_recv applies even more thoroughly here.
    (let [errno (ZMQ/zmq_errno)]
      (when (not= errno 0)
-       (println "Write failure (probably not expected):" errno)
+       (println (str "Write failure (probably not expected): '" errno "', a " (type errno)))
        (throw (ex-info (ZMQ/zmq_strerror errno) {:problem "Trying to send"
                                                  :error-number errno
                                                  :flags flags

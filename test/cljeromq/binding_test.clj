@@ -4,7 +4,8 @@
   (:require [clojure.pprint :refer (pprint)]
             [clojure.test :refer :all]
             [cljeromq.core :as cljeromq]
-            [cljeromq.curve :as curve]))
+            [cljeromq.curve :as curve]
+            [clojure.core.async :as async]))
 
 (deftest req-rep-inproc-unencrypted-handshake
   (println "REQ/REP inproc handshake")
@@ -13,36 +14,74 @@
           ctx (cljeromq/context 1)]
       (println "Checking req/rep unencrypted inproc")
       (try
-        (let [req (cljeromq/socket! ctx :req)]
+        (let [server (cljeromq/socket! ctx :rep)]
           (try
-            (cljeromq/bind! req uri)
+            (cljeromq/bind! server uri)
             (try
-              (let [rep (cljeromq/socket! ctx :rep)]
+              (let [client (cljeromq/socket! ctx :req)]
                 (try
-                  (cljeromq/connect! rep uri)
+                  (cljeromq/connect! client uri)
                   (try
-                    (let [client (future (cljeromq/send! req "HELO")
-                                         (String. (cljeromq/recv! req)))]
-                      (let [greet (cljeromq/recv! rep)]
-                        (is (= "HELO" (String. greet))))
-                      (cljeromq/send! rep "kthxbye")
-                      (is (= @client "kthxbye")))
+                    (let [handshake (future
+                                   (println "Client sending HELO")
+                                   (try
+                                     (cljeromq/send! client "HELO" 0)
+                                     (catch ExceptionInfo ex
+                                       (is false (.getData ex))
+                                       (throw ex)))
+                                   (println "Client waiting on response")
+                                   (String. (cljeromq/recv! client 0)))]
+                      (println "Server waiting on a connection")
+                      (try
+                        (let [greet (cljeromq/recv! server 0)]
+                          (is (= "HELO" (String. greet))))
+                        (catch ExceptionInfo ex
+                          (is (nil? (.getData ex)))
+                          (throw ex)))
+                      (println "Server sending response")
+                      (let [response "kthxbye"]
+                        (cljeromq/send! server response)
+                        (println "Verifying that client received proper response")
+                        (is (= @handshake response))))
                     (finally
-                      (cljeromq/disconnect! rep uri)))
+                      (cljeromq/disconnect! client uri)))
                   (finally
-                    (cljeromq/close! rep))))
+                    (cljeromq/close! client))))
               (finally
                 ;; Can't unbind inproc socket
                 ;; This is actually Bug #949 in libzmq.
                 ;; It should be fixed in 4.1.0, but backporting to 4.0.x
                 ;; has been deemed not worth the effort
                 (try
-                  (cljeromq/unbind! req uri)
+                  (cljeromq/unbind! server uri)
                   (catch ExceptionInfo _
+                    ;; Can't unbind an inproc socket
+                    ;; Depends on the 0mq version. This is fixed in latest.
                     (is true "This matches current, albeit incorrect, behavior")))))
-            (finally (cljeromq/close! req))))
+            (finally (cljeromq/close! server))))
         (finally
           (cljeromq/terminate! ctx))))))
+(comment
+  (req-rep-inproc-unencrypted-handshake)
+
+;; Break it down step by step
+  (def uri "inproc://a-test-1")
+  (def ctx (cljeromq/context 1))
+  (def server (cljeromq/socket! ctx :rep))
+  (cljeromq/bind! server uri)
+  (def client (cljeromq/socket! ctx :req))
+  (cljeromq/connect! client uri)
+  (let [c (async/chan)]
+    (async/go
+      (async/<! c)
+      (println "Server received:\n" (cljeromq/recv! server 0)))
+    (cljeromq/send! client "actdueoa" 0)
+    (async/>!! c :go))
+  (cljeromq/disconnect! client uri)
+  (cljeromq/close! client)
+  (cljeromq/unbind! server uri)
+  (cljeromq/close! server)
+  (cljeromq/terminate! ctx))
 
 (deftest simplest-tcp-test
   (testing "TCP REP/REQ handshake"
