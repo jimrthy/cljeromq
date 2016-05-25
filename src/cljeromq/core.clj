@@ -381,6 +381,8 @@ n: in milliseconds"
   "Associate this socket with a stable network interface/port.
 Any given machine can only have one socket bound to one endpoint at any given time.
 
+Q: Is that true? Or are there flags to allow sharing?
+
 It might be helpful (though ultimately misleading) to think of this call as setting
 up the server side of an interaction."
   [socket :- Socket
@@ -700,6 +702,7 @@ other side might need to resort to something like JSON"
       (let
           [s (String. binary)]
         (comment (println "Received:\n" s))
+        ;; Let caller specify actual format in the first message frame
         (if (and (has-more? socket)
                  (= s (-> K/const :flag :edn)))
           (do

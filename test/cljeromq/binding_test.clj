@@ -406,6 +406,72 @@ In the previous incarnation, everything except tcp seemed to work"
         (cljeromq/close! dealer)
         (cljeromq/terminate! ctx)))))
 
+(deftest basic-push-pull
+  (testing "Context creation"
+    (if-let [ctx (cljeromq/context 2)]
+      (try
+        (testing "Pull allocation"
+          (if-let [receiver (cljeromq/socket! ctx :pull)]
+            (try
+              (testing "Pull binding"
+                (let [address "tcp://127.0.0.1:27835"]
+                  (cljeromq/bind! receiver address)
+                  (try
+                    (testing "Push allocation"
+                      (if-let [sender (cljeromq/socket! ctx :push)]
+                        (try
+                          (testing "Push connection"
+                            (cljeromq/connect! sender address)
+                            (try
+                              (testing "Lock-step push-pull"
+                                (doseq [n (range 10)]
+                                  (let [msg (str "Message #" n)]
+                                    ;; Q: Will this block?
+                                    ;; A: No, it just fails.
+                                    ;; Q: What on earth is going on?
+                                    (cljeromq/send! sender msg 0)
+                                    (let [received (cljeromq/recv! receiver 0)]
+                                      (is (= received msg))))))
+                              (testing "Receive in background"
+                                (let [background
+                                      (async/go-loop [ns (range 10)]
+                                        (when-let [n (first ns)]
+                                          (let [recvd (cljeromq/recv! receiver)]
+                                            (is (= (str "Message #" n) recvd)))
+                                          (recur (rest ns))))]
+                                  (doseq [n (range 10)]
+                                    (let [msg (str "Message #" n)]
+                                      ;; Q: Will this block?
+                                      (cljeromq/send! sender msg 0)))
+                                  (is (not (async/<!! background)))))
+                              (testing "Sending in background"
+                                (let [background
+                                      (async/go-loop [ns (range 10)]
+                                        (when-let [n (first ns)]
+                                          (let [msg (str "Message #" n)]
+                                            ;; Q: Will this block?
+                                            (cljeromq/send! sender msg 0))
+                                          (recur (rest ns))))]
+                                  (doseq [n (range 10)]
+                                    (let [recvd (cljeromq/send! sender)]
+                                      (is (= (str "Message #" n) recvd))))
+                                  (is (not (async/<!! background)))))
+                              (finally
+                                (cljeromq/disconnect! sender address))))
+                          (finally
+                            (cljeromq/close! sender)))))
+                    (finally
+                      (cljeromq/unbind! receiver address)))))
+              (finally
+                (cljeromq/close! receiver)))
+            (is false "Allocating pull socket failed")))
+        (finally
+          (cljeromq/terminate! ctx)))
+      (is false "Failed to allocate context"))))
+
+(comment
+  (basic-push-pull))
+
 (deftest minimal-curveless-communication-test
   (testing "Because communication is boring until the principals can swap messages"
     ;; Both threads block at receiving. Have verified that this definitely works in python
