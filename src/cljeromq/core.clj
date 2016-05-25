@@ -548,6 +548,9 @@ Returns the port number"
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Send
 
+;;; Q: How do I handle multiple arity?
+;;; A: Wrap a "private" method inside a function call.
+;;; TODO: Make that happen
 (defmulti send! (fn [socket message & flags]
                   (class message)))
 
@@ -570,17 +573,12 @@ Returns the port number"
    ;; offset - where the message starts in that array?
    ;; number of bytes to send
    ;; flags
-   (comment) (println "cljeromq Sending a " (count message) " byte array with flags: " flags)
-   (wrap-0mq-numeric-fn-call #(ZMQ/zmq_send socket message 0 (count message) (K/flags->const flags))
-                             "Sending a byte array failed")
-   ;; Note that my reasoning behind safe_recv applies even more thoroughly here.
-   (let [errno (ZMQ/zmq_errno)]
-     (when (not= errno 0)
-       (println (str "Write failure (probably not expected): '" errno "', a " (type errno)))
-       (throw (ex-info (ZMQ/zmq_strerror errno) {:problem "Trying to send"
-                                                 :error-number errno
-                                                 :flags flags
-                                                 :socket socket}))))))
+   (comment) (println "cljeromq Sending a" (count message) "byte array with flags: " flags)
+   (let [success (wrap-0mq-numeric-fn-call
+                  #(ZMQ/zmq_send socket message 0 (count message) (K/flags->const flags))
+                  "Sending a byte array failed")]
+     (when (> 0 success)
+       (assert false "Wrapper should have already thrown")))))
 
 (defmethod send! :default
   ([socket message flags]
@@ -670,18 +668,7 @@ with core clojure functionality"
    (comment (println "Top of raw-recv"))
    (let [flags (K/flags->const flags)]
      (comment (println "Receiving from socket (flags:" flags ")"))
-     ;; Q: How do I know whether this failed?
-     ;; A: At the moment, there really isn't any way
-     (ZMQ/zmq_safe_recv socket flags)
-     (let [errno (ZMQ/zmq_errno)]
-       ;; Note that the entire point to zmq_safe_recv is that I don't want
-       ;; an extra JNI round trip here just to check success.
-       (when (not= errno 0)
-         (println "Read failure (may be expected):" errno)
-         (throw (ex-info (ZMQ/zmq_strerror errno) {:problem "Trying to receive"
-                                                   :error-number errno
-                                                   :flags flags
-                                                   :socket socket}))))))
+     (ZMQ/zmq_safe_recv socket flags)))
   ([socket :- Socket]
    (comment (println "Parameterless raw-recv"))
    (raw-recv! socket :wait)))
@@ -701,7 +688,7 @@ other side might need to resort to something like JSON"
       (comment (println "\tRaw:\n" binary))
       (let
           [s (String. binary)]
-        (comment (println "Received:\n" s))
+        (comment) (println "Received:\n" s)
         ;; Let caller specify actual format in the first message frame
         (if (and (has-more? socket)
                  (= s (-> K/const :flag :edn)))

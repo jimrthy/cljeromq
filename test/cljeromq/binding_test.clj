@@ -453,8 +453,8 @@ In the previous incarnation, everything except tcp seemed to work"
                                             (cljeromq/send! sender msg 0))
                                           (recur (rest ns))))]
                                   (doseq [n (range 10)]
-                                    (let [recvd (cljeromq/send! sender)]
-                                      (is (= (str "Message #" n) recvd))))
+                                    (let [recvd (cljeromq/recv! sender :wait)]
+                                      (is (= recvd (str "Message #" n)))))
                                   (is (not (async/<!! background)))))
                               (finally
                                 (cljeromq/disconnect! sender address))))
