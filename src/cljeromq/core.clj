@@ -408,13 +408,21 @@ For that matter, it seems like it would be better to just implement
 ISeq and return the next message as it becomes ready."
   ([poller :- ZMQ$Poller]
      (.poll poller))
-  ([poller timeout]
+  ([poller :- ZMQ$Poller
+    timeout :- s/Int]
      (.poll poller timeout)))
 
 (defn register-socket-in-poller!
   "Register a socket to poll on."
-  [#^ZMQ$Socket socket #^ZMQ$Poller poller]
-  (io! (.register poller socket :poll-in)))
+  ([#^ZMQ$Socket socket #^ZMQ$Poller poller]
+   (let [^Long flag (K/control->const :poll-in)]
+     (io! (.register poller socket flag))))
+  ([#^ZMQ$Socket socket #^ZMQ$Poller poller flag & more-flags]
+   ;; TODO: Verify that this does what I think with various flag keyword combinations
+   (let [^Long actual-flags (K/flags->const (conj more-flags flag))]
+     ;; If nothing else, needs a unit test
+     (throw (ex-info "Check this" {}))
+     (io! (.register poller socket actual-flags)))))
 
 (defn unregister-socket-in-poller!
   [#^ZMQ$Socket socket #^ZMQ$Poller poller]
@@ -427,22 +435,25 @@ Of course, a big part of the point to real pollers is
 dealing with multiple sockets"
   ;; It's pretty blatant that I haven't had any time to
   ;; do anything that resembles testing this code.
-  `(let [~poller-name (cljeromq.core/poller ~context)]
-     ;; poller-name might be OK to deref multiple times, since it's
-     ;; almost definitely a symbol.
-     ;; That same is true of socket, isn't it?
-     ;; TODO: Ask Steven
-     (cljeromq.core/register-socket-in-poller! ~poller-name ~socket :poll-in :poll-err)
-     (try
-       ~@body
-       (finally
-         (cljeromq.core/unregister-socket-in-poller! ~poller-name ~socket)))))
+  (let [pn$ poller-name]  ; TODO: Look up clojure's auto-gensym rules
+    `(let [~pn$ (cljeromq.core/poller ~context)]
+       ;; poller-name might be OK to deref multiple times, since it's
+       ;; almost definitely a symbol.
+       ;; That same is true of socket, isn't it?
+       ;; TODO: Verify
+
+       (cljeromq.core/register-socket-in-poller! ~socket ~pn$ :poll-in :poll-err)
+       (try
+         ~@body
+         (finally
+           (cljeromq.core/unregister-socket-in-poller! ~poller-name ~socket))))))
 
 (s/defn socket-poller-in!
   "Attach a new poller to a seq of sockets.
 Honestly, should be smarter and just let me poll on a single socket."
   [sockets :- [ZMQ$Socket]]
   (let [checker (poller (count sockets))]
+    ;; TODO: Convert to run! instead (?)
     (doseq [s sockets]
       (register-socket-in-poller! s checker))
     checker))

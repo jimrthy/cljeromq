@@ -1,0 +1,7 @@
+* Basic tests hosed
+** Encrypted router/dealer is top of list
+* Licensing
+** Switch to EPL
+*** Q: Is this legal, or is 0mq just a dead-end for any clojure project?
+* jni-ffr
+** At least take a stab at this

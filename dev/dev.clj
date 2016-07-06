@@ -56,26 +56,26 @@
 ;; Just because it's annoying to define this every time
 (def ctx (mq/context))
 
-(comment)
-(def pusher (mq/socket! ctx :push))
-(def puller (mq/socket! ctx :pull))
-;; Plain-text inproc works fine.
-;; Then again, so does plain-text TCP
-;; Q: What about encrypted inproc, as silly as
-;; that would be?
-(comment (mq/bind! puller "inproc://dev-test")
-         (mq/connect! pusher "inproc://dev-test"))
-;; Make this constant for testing out python interop
-(let [public "nvXGXG:{=4&>pXCRSuk<p#Hv)&4w$)g{pdk2NCJx"
-      private "X/98-PJZN)oCHZ7RJ8Sx&^V>e>5ZJh34JK4KdDIv"]
-  (def server-keys {:public (.getBytes public)
-                    :private (.getBytes private)}))
-(def client-keys (enc/new-key-pair))
-(comment)
-(enc/prepare-client-socket-for-server! puller client-keys (:public server-keys))
-(enc/make-socket-a-server! pusher (:private server-keys))
+(comment
+  (def pusher (mq/socket! ctx :push))
+  (def puller (mq/socket! ctx :pull))
+  ;; Plain-text inproc works fine.
+  ;; Then again, so does plain-text TCP
+  ;; Q: What about encrypted inproc, as silly as
+  ;; that would be?
+  (comment (mq/bind! puller "inproc://dev-test")
+           (mq/connect! pusher "inproc://dev-test"))
+  ;; Make this constant for testing out python interop
+  (let [public "nvXGXG:{=4&>pXCRSuk<p#Hv)&4w$)g{pdk2NCJx"
+        private "X/98-PJZN)oCHZ7RJ8Sx&^V>e>5ZJh34JK4KdDIv"]
+    (def server-keys {:public (.getBytes public)
+                      :private (.getBytes private)}))
+  (def client-keys (enc/new-key-pair))
+  (comment)
+  (enc/prepare-client-socket-for-server! puller client-keys (:public server-keys))
+  (enc/make-socket-a-server! pusher (:private server-keys))
 
-(mq/bind! puller "tcp://127.0.0.1:2111")
-(mq/connect! pusher "tcp://127.0.0.1:2111")
-(def push-future (future (mq/send! pusher "Push Test" 0)
-                            (println "Dev message pushed, push-future exiting")))
+  (mq/bind! puller "tcp://127.0.0.1:2111")
+  (mq/connect! pusher "tcp://127.0.0.1:2111")
+  (def push-future (future (mq/send! pusher "Push Test" 0)
+                           (println "Dev message pushed, push-future exiting"))))

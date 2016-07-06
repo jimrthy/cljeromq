@@ -2,7 +2,7 @@
   (:require [schema.core :as s])
   ;; This dependency's annoying, but the alternative
   ;; is to just copy/paste its named constants.
-  (:import [org.zeromq ZMQ]))
+  (:import [org.zeromq ZMQ ZMQ$Poller]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Schema
@@ -21,13 +21,17 @@
                       :no-block ZMQ/NOBLOCK
                       :dont-wait ZMQ/DONTWAIT
 
-                      ;; Blocking (default...doesn't seem to be an 
+                      ;; Blocking (default...doesn't seem to be an
                       ;; associated named constant)
                       :wait 0
-                                
+
                       ;; More message parts are coming
                       :sndmore ZMQ/SNDMORE
-                      :send-more ZMQ/SNDMORE}
+                      :send-more ZMQ/SNDMORE
+
+                      :poll-in ZMQ$Poller/POLLIN
+                      :poll-out ZMQ$Poller/POLLOUT
+                      :poll-err ZMQ$Poller/POLLERR}
 
             :device {:forwarder ZMQ/FORWARDER  ; 2
                      :queue ZMQ/QUEUE   ; 3
@@ -42,7 +46,7 @@
                     :not-socket 156384721
                     :not-supported 156384713
                     :terminated 156384765}
-            
+
             ;; TODO: Access these via iroh?
             :socket-options {:curve-server 47   ; ZMQ/CURVE_SERVER  ; 1 for yes, 0 for no
                              ;; the next two are for the client
@@ -62,16 +66,16 @@
                           ;; Request/Reply
                           :req ZMQ/REQ
                           :rep ZMQ/REP
-                                    
+
                           ;; Publish/Subscribe
                           :pub ZMQ/PUB
                           :sub ZMQ/SUB
-                          
+
                           ;; Extended Publish/Subscribe
                           :x-pub ZMQ/XPUB
                           :x-sub ZMQ/XSUB
                           ;; Push/Pull
-                          
+
                           :push ZMQ/PUSH
                           :pull ZMQ/PULL
 
@@ -84,13 +88,13 @@
                           ;; Lets you route messages to specific connections if you
                           ;; know their identities.
                           :router ZMQ/ROUTER
-                                    
+
                           ;; Combined ventilator/sink.
                           ;; Does load balancing on output and fair-queuing on input.
                           ;; Can shuffle messages out to N nodes then shuffle the replies back.
                           ;; Raw bidirectional async pattern.
                           :dealer ZMQ/DEALER
-                                    
+
                           ;; Obsolete names for Router/Dealer
                           :xreq ZMQ/XREQ
                           :xrep ZMQ/XREP}
