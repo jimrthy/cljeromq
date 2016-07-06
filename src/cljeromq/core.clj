@@ -5,7 +5,7 @@
 ;; This probably isn't strictly required, and it gets finicky
 ;; when it comes to the EPL...I am going to have to get an
 ;; opinion from the FSF (and probably double-check with
-;; the 0mq people) to verify how this actually works in 
+;; the 0mq people) to verify how this actually works in
 ;; practice.
 
 ;; TODO: What are the ramifications of using libraries that
@@ -20,7 +20,6 @@
   (:require [cljeromq.common :as common :refer (byte-array-type)]
             [cljeromq.constants :as K]
             [clojure.edn :as edn]
-            [ribol.core :refer (raise)]
             [schema.core :as s])
   (:import [java.util Random]
            [java.nio ByteBuffer]
@@ -94,7 +93,7 @@ terminate! on it just before it exits."
 If you have outgoing sockets with a linger value (which is the default), this will block until
 those messages are received."
   [ctx :- ZMQ$Context]
-  (io! 
+  (io!
    (.term ctx)))
 
 (defmacro with-context
@@ -240,18 +239,7 @@ Returns the port"
   [^ZMQ$Socket socket ^bytes message flags]
   (println "Sending byte array on" socket "\nFlags:" flags)
   (when-not (.send socket message 0 flags)
-    (comment (let [err-code (errno)
-                   msg
-                   (condp (= (-> K/const :error (:code %))) err-code
-                     :again "Non-blocking mode requested, but message cannot currently be sent"
-                     :not-supported "Socket cannot send"
-                     :fsm "Cannot send in current state"
-                     :terminated "Socket's Context has been terminated"
-                     :not-socket "Socket invalid"
-                     :interrupted "Interrupted by signal"
-                     :fault "Invalid message")]
-               (raise [:fail {:reason err-code :message msg}])))
-    (raise {:not-implemented "What went wrong?"})))
+    (throw (ex-info "Sending failed" {:not-implemented "What went wrong?"}))))
 
 (defmethod send! String
   [^ZMQ$Socket socket ^String message flags]
@@ -279,7 +267,7 @@ Returns the port"
   (io! (send! socket message :dont-wait)))
 
 (s/defn send-partial! [socket :- ZMQ$Socket message]
-  "I'm seeing this as a way to send all the messages in an envelope, except 
+  "I'm seeing this as a way to send all the messages in an envelope, except
 the last.
 Yes, it seems dumb, but it was convenient at one point.
 Honestly, that's probably a clue that this basic idea is just wrong."
@@ -297,7 +285,7 @@ It totally falls apart when I'm just trying to send a string."
     (send-partial! socket m))
   (send! socket ""))
 
-(defn proxy 
+(defn proxy
   "Reads from f-in as long as there are messages available,
 forwarding to f-out.
 
@@ -424,7 +412,7 @@ ISeq and return the next message as it becomes ready."
      (.poll poller timeout)))
 
 (defn register-socket-in-poller!
-  "Register a socket to poll on." 
+  "Register a socket to poll on."
   [#^ZMQ$Socket socket #^ZMQ$Poller poller]
   (io! (.register poller socket :poll-in)))
 
