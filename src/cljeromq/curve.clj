@@ -39,8 +39,9 @@ Documentation seems fuzzy about whether or not it also needs to set
 the public key."
   [sock :- ZMQ$Socket
    private-key :- byte-array-type]
-  (.setCurveServer sock true)
-  (.setCurveSecretKey sock private-key)
+  (io!
+   (.setCurveServer sock true)
+   (.setCurveSecretKey sock private-key))
 
   ;; TODO: Move this comment into jzmq
   ;; official tests also set the ZMQ_IDENTITY option.
@@ -66,9 +67,10 @@ Which seems like a truly horrid idea."
   [sock :- ZMQ$Socket
    {:keys [public private :as client-key-pair]} :- key-pair
    server-public-key :- byte-array-type]
-  (.setCurvePublicKey sock public)
-  (.setCurveSecretKey sock private)
-  (.setCurveServerKey sock server-public-key))
+  (io!
+   (.setCurvePublicKey sock public)
+   (.setCurveSecretKey sock private)
+   (.setCurveServerKey sock server-public-key)))
 
 (s/defn server-socket :- ZMQ$Socket
   "Create a new socket suitable for use as a CURVE server.

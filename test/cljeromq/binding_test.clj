@@ -3,8 +3,8 @@
             ZMQException
             ZMQ$Curve
             ZMQ$Curve$KeyPair])
-  (:require [clojure.test :refer :all]
-            #_[jzmq-check.core :refer :all]))
+  (:require [cljeromq.curve :as curve]
+            [clojure.test :refer :all]))
 
 (deftest req-rep-inproc-unencrypted-handshake
   (testing "Basic inproc req/rep handshake test"
@@ -110,108 +110,135 @@
 
 (deftest test-encrypted-req-rep
   "Translated directly from my java unit test"
-  (let [client-keys (ZMQ$Curve/generateKeyPair)
-        server-keys (ZMQ$Curve/generateKeyPair)
+  (let [client-keys (curve/new-key-pair)
+        server-keys (curve/new-key-pair)
         ctx (ZMQ/context 1)
-        in (.socket ctx ZMQ/REQ)]
-    (println "Encrypted req/rep inproc test")
-    (.makeIntoCurveClient in client-keys (.privateKey server-keys))
-    (.bind in "inproc://reqrep")
+        in (.socket ctx ZMQ/REQ)
+        url "inproc://reqrep"]
+    (try
+      (curve/prepare-client-socket-for-server! in client-keys (:public server-keys))
+      (.bind in url)
+      (try
+        (let [out (.socket ctx ZMQ/REP)]
+          (try
+            (curve/make-socket-a-server! out (:private server-keys))
+            (.connect out url)
+            (try
+              (dotimes [n 10]
+                (let [req (.getBytes (str "request" n))
+                      rep (.getBytes (str "reply" n))]
+                  (comment (println n))
+                  (let [success (.send in req 0)]
+                    (when-not success
+                      (println "Sending request returned:" success)
+                      (is (or false true))))
+                  (let [response (.recv out 0)]
+                    (is (= (String. req) (String. response))))
 
-    (let [out (.socket ctx ZMQ/REP)]
-      (.makeIntoCurveServer out (.privateKey server-keys))
-      (.connect out "inproc://reqrep")
-
-      (dotimes [n 10]
-        (let [req (.getBytes (str "request" n))
-              rep (.getBytes (str "reply" n))]
-          (comment (println n))
-          (let [success (.send in req 0)]
-            (when-not success
-              (println "Sending request returned:" success)
-              (is (or false true))))
-          (let [response (.recv out 0)]
-            (is (= (String. req) (String. response))))
-
-          (let [success (.send out (String. rep))]
-            (when-not success
-              (println "Error sending Reply: " success)
-              (is (or false true))))
-          (let [response (.recv in 0)]
-            (is (= (String. rep) (String. response))))))))
-  (println "Simple CURVE checked"))
+                  (let [success (.send out (String. rep))]
+                    (when-not success
+                      (println "Error sending Reply: " success)
+                      (is (or false true))))
+                  (let [response (.recv in 0)]
+                    (is (= (String. rep) (String. response))))))
+              (finally (.disconnect out url)))
+            (finally
+              (.close out))))
+        (finally
+          (.unbind in url)))
+      (finally
+        (.close in)
+        (.term ctx)))))
 
 (deftest test-encrypted-push-pull
   "Translated directly from my java unit test"
-  (let [client-keys (ZMQ$Curve/generateKeyPair)
-        server-keys (ZMQ$Curve/generateKeyPair)
-        ctx (ZMQ/context 1)
-        in (.socket ctx ZMQ/PUSH)]
-    (println "Encrypted push/pull inproc test")
-    (.makeIntoCurveClient in client-keys (.privateKey server-keys))
-    (.bind in "inproc://reqrep")
-
-    (let [out (.socket ctx ZMQ/PULL)]
-      (.makeIntoCurveServer out (.privateKey server-keys))
-      (.connect out "inproc://reqrep")
-
-      (dotimes [n 10]
-        (let [req (.getBytes (str "request" n))
-              rep (.getBytes (str "reply" n))]
-          (let [success (.send in req 0)]
-            (when-not success
-              (println "Sending request returned:" success)
-              (is false)))
-          (let [response (.recv out 0)]
-            (is (= (String. req) (String. response)))))))))
+  (let [client-keys (curve/new-key-pair)
+        server-keys (curve/new-key-pair)
+        ctx (ZMQ/context 2)
+        out (.socket ctx ZMQ/PUSH)
+        url "inproc://push-pull"]
+    (try
+      ;; Note: this really should fail, since the client absolutely should not know
+      ;; the server's private key.
+      ;; Seems to work because inproc totally ignores encryption
+      (curve/prepare-client-socket-for-server! out client-keys (:private server-keys))
+      (.bind out url)
+      (try
+        (let [in (.socket ctx ZMQ/PULL)]
+          (try
+            (curve/make-socket-a-server! in (:private server-keys))
+            (.connect in url)
+            (try
+              (dotimes [n 10]
+                (let [req (.getBytes (str "request" n))]
+                  (let [success (.send out req 0)]
+                    (when-not success
+                      (throw (ex-info "Failed" {}))))
+                  (let [response (.recv in 0)]
+                    (is (= (String. req) (String. response))))))
+              (finally
+                (.disconnect in url)))
+            (finally (.close in))))
+        (finally
+          (.unbind out url)))
+      (finally
+        (.close out)
+        (.term ctx)))))
 
 (deftest test-encrypted-router-dealer
   "Translated directly from my java unit test"
-  (let [client-keys (ZMQ$Curve/generateKeyPair)
-        server-keys (ZMQ$Curve/generateKeyPair)
-        ctx (ZMQ/context 1)
-        in (.socket ctx ZMQ/DEALER)]
-    (println "Encrypted router-dealer inproc test")
-    (.makeIntoCurveClient in client-keys (.privateKey server-keys))
-    (.setIdentity in "basic router/dealer encryption check")
-    (.bind in "inproc://reqrep")
+  (let [client-keys (curve/new-key-pair)
+        server-keys (curve/new-key-pair)
+        ctx (ZMQ/context 2)
+        in (.socket ctx ZMQ/DEALER)
+        url "inproc://router-dealer"]
+    (try
+      (curve/prepare-client-socket-for-server! in client-keys (:public server-keys))
+      (.setIdentity in (.getBytes "basic router/dealer encryption check"))
+      (.bind in url)
+      (try
+        (let [out (.socket ctx ZMQ/ROUTER)]
+          (try
+            (curve/make-socket-a-server! out (:private server-keys))
+            (.connect out url)  ; Much more realistic for this to bind.
+            (try
+              (dotimes [n 10]
+                (let [s-req (str "request" n)
+                      req (.getBytes s-req)
+                      rep (.getBytes (str "reply" n))]
+                  (let [_ (.sendMore in "")
+                        success (.send in req 0)]
+                    (when-not success
+                      (throw (ex-info (str "Sending request returned:" success) {}))))
 
-    (let [out (.socket ctx ZMQ/ROUTER)]
-      (.makeIntoCurveServer out (.privateKey server-keys))
-      (.connect out "inproc://reqrep")  ; Much more realistic for this to bind.
+                  (let [id (.recv out 0)
+                        delimeter (.recv out 0)
+                        response (.recv out 0)
+                        s-rsp (String. response)]
+                    (when-not (= s-req s-rsp)
+                      (println "Sent '" s-req "' which is " (count req) " bytes long.\n"
+                               "Received '" s-rsp "' which is " (count response)
+                               " from " (String. id)))
+                    (is (= s-req s-rsp))
 
-      (dotimes [n 10]
-        (let [req (.getBytes (str "request" n))
-              rep (.getBytes (str "reply" n))]
-          (comment (println n))
-          (let [_ (.sendMore in "")
-                success (.send in req 0)]
-            (when-not success
-              (println "Sending request returned:" success)
-              (is false)))
-
-          (let [id (.recv out 0)
-                delimeter (.recv out 0)
-                response (.recv out 0)
-                s-req (String. req)
-                s-rsp (String. response)]
-            (when-not (= s-req s-rsp)
-              (println "Sent '" s-req "' which is " (count req) " bytes long.\n"
-                       "Received '" s-rsp "' which is " (count response)
-                       " from " (String. id)))
-            (is (= s-req s-rsp))
-
-            (comment) (.sendMore out (String. id)))
-          (let [_ (.send out "")
-                success (.send out (String. rep))]
-            (when-not success
-              (println "Error sending Reply: " success)
-              (is false)))
-          (println "Inproc dealer waiting on encrypted response from router")
-          (let [_ (.recv in 0)
-                response (.recv in 0)]
-            (is (= (String. rep) (String. response))))))))
-  (println "Dealer<->Router CURVE checked"))
+                    (.sendMore out (String. id)))
+                  (let [_ (.sendMore out "")
+                        success (.send out (String. rep))]
+                    (when-not success
+                      (println "Error sending Reply: " success)
+                      (is false)))
+                  (let [_ (.recv in 0)
+                        response (.recv in 0)]
+                    (is (= (String. rep) (String. response))))))
+              (finally
+                (.disconnect out url)))
+            (finally
+              (.close out))))
+        (finally
+          (.unbind in url)))
+      (finally
+        (.close in)
+        (.term ctx)))))
 
 (deftest test-encrypted-router-dealer-over-tcp
   (let [client-keys (ZMQ$Curve/generateKeyPair)

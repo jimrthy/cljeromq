@@ -96,8 +96,11 @@
 (deftest transmit-float
   (req-rep-wrapper Math/PI))
 
-(deftest transmit-bigint
+(deftest transmit-bigdecimal
   (req-rep-wrapper 1000000M))
+
+(deftest transmit-bigint
+  (req-rep-wrapper 2000000N))
 
 (comment
   ;; Q: What would this look like?
