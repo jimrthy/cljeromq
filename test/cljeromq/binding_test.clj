@@ -225,8 +225,7 @@
                   (let [_ (.sendMore out "")
                         success (.send out (String. rep))]
                     (when-not success
-                      (println "Error sending Reply: " success)
-                      (is false)))
+                      (throw (ex-info (str "Error sending Reply: " success) {}))))
                   (let [_ (.recv in 0)
                         response (.recv in 0)]
                     (is (= (String. rep) (String. response))))))
@@ -240,80 +239,176 @@
         (.close in)
         (.term ctx)))))
 
-(deftest test-encrypted-router-dealer-over-tcp
-  (let [client-keys (ZMQ$Curve/generateKeyPair)
-        server-keys (ZMQ$Curve/generateKeyPair)
-        ctx (ZMQ/context 1)
-        in (.socket ctx ZMQ/DEALER)]
-    (println "Encrypted router-dealer TCP test")
-    (.makeIntoCurveClient in client-keys (.privateKey server-keys))
-    (.bind in "tcp://*:54398")
-
-    (let [out (.socket ctx ZMQ/ROUTER)]
-      (.makeIntoCurveServer out (.privateKey server-keys))
-      (.connect out "tcp://127.0.0.1:54398")
-
-      (dotimes [n 10]
-        (let [req (.getBytes (str "request" n))
-              rep (.getBytes (str "reply" n))]
-          (comment) (println "Encrypted dealer/router over TCP" n)
-          (let [success (.send in req 0)]
-            (when-not success
-              (println "Sending request returned:" success)
-              (is false)))
-          (println "Waiting for encrypted message from dealer to arrive at router over TCP")
-          (let [response (.recv out 0)]
-            (println "Router received REQ")
-            (let [s-req (String. req)
-                  s-res (String. response)]
-              (when-not (= s-req s-res)
-                (println "Sent '" s-req "' which consists of " (count req) " bytes\n"
-                         "Received '" s-res "' which is " (count response) " bytes long")
-                (is (= s-req s-res)))))
-
-          (let [success (.send out (String. rep))]
-            (when-not success
-              (println "Error sending Reply: " success)
-              (is false)))
-          (println "Dealer waiting for encrypted ACK from Router over TCP")
-          (let [response (.recv in 0)]
-            (is (= (String. rep) (String. response))))
-          (println "Encrypted Dealer->Router over TCP complete"))))))
-
 (deftest test-unencrypted-router-dealer-over-tcp
-  "Translated directly from the jzmq unit test"
+  "It's backwards, but seems worth testing
+TODO: Replicate this in C or python to see if it really is this fragile"
   (let [ctx (ZMQ/context 1)
-        in (.socket ctx ZMQ/DEALER)]
-    (println "Unencrypted router/dealer over TCP")
-    (.bind in "tcp://*:54398")
+        in (.socket ctx ZMQ/DEALER)
+        server-url "tcp://*:54398"]
+    (try
+      (println "Unencrypted router/dealer over TCP")
+      ;; Note that this step is vital, even though it seems like a default
+      ;; should work.
+      ;; TODO: Duplicate this test but bind the router the way it will work
+      ;; in real life. See whether this step is required in than direction
+      (.setIdentity in (.getBytes "insecure router/dealer over TCP"))
+      (.bind in server-url)
+      (try
+        (let [out (.socket ctx ZMQ/ROUTER)
+              client-url "tcp://127.0.0.1:54398"]
+          (try
+            (.connect out client-url)
+            (try
+              (dotimes [n 10]
+                (let [s-req (str "request" n)
+                      req (.getBytes  s-req)
+                      rep (.getBytes (str "reply" n))]
+                  (.sendMore in "")
+                  (let [success (.send in req 0)]
+                    (when-not success
+                      (throw (ex-info (str "Sending request returned:" success) {}))))
+                  (let [id (.recv out 0)
+                        delimeter (.recv out 0)
+                        response (.recv out 0)
+                        s-rsp (String. response)]
+                    (when-not (= s-req s-rsp)
+                      (throw (ex-info (str "Sent '" s-req "' which consists of " (count req) " bytes\n"
+                                           "Received '" s-rsp "' which is " (count response)
+                                           " bytes long from " (String. id)))))
+                    (.sendMore out (String. id)))
+                  (.sendMore out "")
+                  (let [success (.send out (String. rep))]
+                    (when-not success
+                      (throw (ex-info (str "Error sending Reply: " success) {}))))
+                  (let [delimeter (.recv in 0)
+                        response (.recv in 0)
+                        s-response (String. response)]
+                    (is (= (String. rep) s-response)))))
+              (finally
+                (.disconnect out client-url)))
+            (finally
+              (.close out))))
+        (finally
+          (println "Unbinding the Dealer socket from" server-url)
+          ;; This is throwing an exception.
+          ;; Q: Why?
+          (.unbind in server-url)
+          (println "Dealer socket unbound")))
+      (finally
+        (.close in)
+        (.term ctx)))))
 
-    (let [out (.socket ctx ZMQ/ROUTER)]
-      (.connect out "tcp://127.0.0.1:54398")
+(deftest test-unencrypted-dealer-router-over-tcp
+  "Just like the router-dealer equivalent above, but w/ dealer as 'client'"
+  (let [ctx (ZMQ/context 1)
+        server (.socket ctx ZMQ/ROUTER)
+        server-url "tcp://*:54398"]
+    (try
+      (println "Unencrypted dealer/router over TCP")
+      ;; Q: Does this step still matter?
+      (.setIdentity server (.getBytes "insecure router/dealer over TCP"))
+      (.bind server server-url)
+      (try
+        (let [client (.socket ctx ZMQ/DEALER)
+              client-url "tcp://127.0.0.1:54398"]
+          (try
+            (.connect client client-url)
+            (try
+              (dotimes [n 10]
+                (let [s-req (str "request" n)
+                      req (.getBytes  s-req)
+                      rep (.getBytes (str "reply" n))]
+                  (.sendMore client "")
+                  (let [success (.send client req 0)]
+                    (when-not success
+                      (throw (ex-info (str "Sending request returned:" success) {}))))
+                  (let [id (.recv server 0)
+                        delimeter (.recv server 0)
+                        response (.recv server 0)
+                        s-rsp (String. response)]
+                    (when-not (= s-req s-rsp)
+                      (throw (ex-info (str "Sent '" s-req "' which consists of " (count req) " bytes\n"
+                                           "Received '" s-rsp "' which is " (count response)
+                                           " bytes long from " (String. id)))))
+                    (.sendMore server (String. id)))
+                  (.sendMore server "")
+                  (let [success (.send server (String. rep))]
+                    (when-not success
+                      (throw (ex-info (str "Error sending Reply: " success) {}))))
+                  (let [delimeter (.recv client 0)
+                        response (.recv client 0)
+                        s-response (String. response)]
+                    (is (= (String. rep) s-response)))))
+              (finally
+                (.disconnect client client-url)))
+            (finally
+              (.close client))))
+        (finally
+          (println "Unbinding the Router socket from" server-url)
+          (.unbind server server-url)
+          (println "Dealer socket unbound")))
+      (finally
+        (.close server)
+        (.term ctx)))))
 
-      (dotimes [n 10]
-        (let [req (.getBytes (str "request" n))
-              rep (.getBytes (str "reply" n))]
-          (comment (println n))
-          (let [success (.send in req 0)]
-            (when-not success
-              (println "Sending request returned:" success)
-              (is (or false true))))
-          (println "Waiting for message from dealer to arrive at router")
-          (let [response (.recv out 0)]
-            (println "Router received REQ")
-            (let [s-req (String. req)
-                  s-res (String. response)]
-              (when-not (= s-req s-res)
-                (println "Sent '" s-req "' which consists of " (count req) " bytes\n"
-                         "Received '" s-res "' which is " (count response) " bytes long")
-                (is (= s-req s-res)))))
+(deftest test-encrypted-router-dealer-over-tcp
+  "This is broken.
+TODO: Contrast with the inproc version to find difference(s) that matter"
+  (let [client-keys (curve/new-key-pair)
+        server-keys (curve/new-key-pair)
+        ctx (ZMQ/context 2)
+        in (.socket ctx ZMQ/DEALER)
+        server-url "tcp://*:54398"
+        client-url "tcp://127.0.0.1:54398"]
+    (try
+      (println "Encrypted router-dealer TCP test")
+      (curve/prepare-client-socket-for-server! in client-keys (:public server-keys))
+      (.bind in server-url)
+      (try
+        (let [out (.socket ctx ZMQ/ROUTER)]
+          (curve/make-socket-a-server! out (:private server-keys))
+          (.connect out client-url)
+          (try
+            (dotimes [n 10]
+              (let [s-req (str "request" n)
+                    req (.getBytes s-req)
+                    rep (.getBytes (str "reply" n))]
+                (comment) (println "Encrypted dealer/router over TCP" n)
+                (let [_ (.sendMore in "")
+                      success (.send in req 0)]
+                  (when-not success
+                    (throw (ex-info (str "Sending request returned:" success) {}))))
+                (println "Waiting for encrypted message from dealer to arrive at router over TCP")
+                (let  [id (.recv out 0)
+                       delimeter (.recv out 0)
+                       response (.recv out 0)
+                       s-rsp (String. response)]
+                  (println "Router received REQ")
+                  (let [s-rsp (String. response)]
+                    (when-not (= s-req s-rsp)
+                      (println "Sent '" s-req "' which consists of " (count req) " bytes\n"
+                               "Received '" s-rsp "' which is " (count response) " bytes long")
+                      (is (= s-req s-rsp))))
+                  (.sendMore out (String. id)))
+                (.sendMore out "")
+                (let [success (.send out (String. rep))]
+                  (when-not success
+                    (throw (ex-info (str "Error sending Reply: " success) {}))))
+                (println "Dealer waiting for encrypted ACK from Router over TCP")
 
-          (let [success (.send out (String. rep))]
-            (when-not success
-              (println "Error sending Reply: " success)
-              (is false)))
-          (let [response (.recv in 0)]
-            (is (= (String. rep) (String. response)))))))))
+                (let [delimiter (.recv in 0)
+                      _ (println "Delimiter received:" delimiter)
+                      response (.recv in 0)]
+                  (println "Have response:" response)
+                  (is (= (String. rep) (String. response))))
+                (println "Encrypted Dealer->Router over TCP complete")))
+            (finally
+              (.disconect out client-url))))
+        (finally
+          (.unbind in server-url)))
+      (finally
+        (.close in)
+        (.term ctx)))))
 
 (deftest minimal-curveless-communication-test
   (testing "Because communication is boring until the principals can swap messages"
