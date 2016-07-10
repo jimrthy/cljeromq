@@ -1,4 +1,6 @@
 (ns cljeromq.binding-test
+  "This namespace is poorly named. It's really where
+all the interesting parts happen"
   (:import [org.zeromq ZMQ
             ZMQException
             ZMQ$Curve

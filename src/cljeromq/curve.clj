@@ -34,9 +34,7 @@ e.g.
         :private (ZMQ$Curve/z85Decode private)}))
 
 (s/defn make-socket-a-server!
-  "Adjust sock so that it's ready to serve CURVE-encrypted messages.
-Documentation seems fuzzy about whether or not it also needs to set
-the public key."
+  "Adjust sock so that it's ready to serve CURVE-encrypted messages."
   [sock :- ZMQ$Socket
    private-key :- byte-array-type]
   (io!
