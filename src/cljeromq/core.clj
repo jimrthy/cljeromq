@@ -20,6 +20,7 @@
   (:require [cljeromq.common :as common :refer (byte-array-type)]
             [cljeromq.constants :as K]
             [clojure.edn :as edn]
+            [clojure.string :as string]
             [schema.core :as s])
   (:import [java.util Random]
            [java.nio ByteBuffer]
@@ -458,18 +459,19 @@ Honestly, should be smarter and just let me poll on a single socket."
       (register-socket-in-poller! s checker))
     checker))
 
-(defn dump!
-  "Cheeseball first draft at just logging incoming messages.
-This approach is pretty awful...at the very least it should build
-a string and return that.
-Then again, it's fairly lispy...callers can always rediret STDOUT."
+(defn dump
+  "Log incoming messages"
   [#^ZMQ$Socket socket]
-  (println (->> "-" repeat (take 38) (apply str)))
-  (doseq [msg (recv-all! socket 0)]
-    (print (format "[%03d] " (count msg)))
-    (if (and (= 17 (count msg)) (= 0 (first msg)))
-      (println (format "UUID %s" (-> msg ByteBuffer/wrap .getLong)))
-      (println (-> msg String. .trim)))))
+  (let [seperator (->> "-" repeat (take 38) (apply str))
+        ;; Q: How can I type-hint msg (which should be a Byte Array)
+        ;; to avoid reflection warnings?
+        formatted (map (fn [msg]
+                         (str (format "[%03d] " (count msg))
+                              (if (and (= 17 (count msg)) (= 0 (first msg)))
+                                (format "UUID %s" (-> msg ByteBuffer/wrap .getLong))
+                                (-> msg String. .trim))))
+                       (recv-all! socket 0))]
+    (string/join \newline (concat [seperator] formatted))))
 
 (defn set-id!
   ([#^ZMQ$Socket socket #^long n]

@@ -1,9 +1,10 @@
-(ns jzmq-check.core-test
+(ns cljeromq.binding-test
   (:import [org.zeromq ZMQ
             ZMQException
-            ZCurveKeyPair])
+            ZMQ$Curve
+            ZMQ$Curve$KeyPair])
   (:require [clojure.test :refer :all]
-            [jzmq-check.core :refer :all]))
+            #_[jzmq-check.core :refer :all]))
 
 (deftest req-rep-inproc-unencrypted-handshake
   (testing "Basic inproc req/rep handshake test"
@@ -26,16 +27,14 @@
                       (.send rep "kthxbye")
                       (is (= @client "kthxbye")))
                     (finally
-                      (.disconnect rep)))
+                      (.disconnect rep uri)))
                   (finally
                     (.close rep))))
               (finally
-                ;; Can't unbind inproc socket
-                ;; This is actually Bug #949 in libzmq.
-                ;; It should be fixed in 4.1.0, but backporting to 4.0.x
-                ;; has been deemed not worth the effort
-                (is (thrown-with-msg? ZMQException #"No such file or directory"
-                                      (.unbind req uri)))))
+                ;; Note that this should fail on 4.0.x
+                ;; It's a bug that was fixed in 4.1.0, but deemed unworthy
+                ;; of backporting
+                (.unbind req uri)))
             (finally (.close req))))
         (finally
           (.term ctx))))))
@@ -74,35 +73,35 @@
 
 (deftest create-curve-sockets-test
   (testing "Slap together basic server socket options"
-    (let [server-keys (ZCurveKeyPair/Factory)
-          server-public (.publicKey server-keys)
-          server-secret (.privateKey server-keys)
-          client-keys (ZCurveKeyPair/Factory)
-          client-public (.publicKey client-keys)
-          client-secret (.privateKey client-keys)
+    (let [server-keys (ZMQ$Curve/generateKeyPair)
+          server-public (ZMQ$Curve/z85Decode (.publicKey server-keys))
+          server-secret (ZMQ$Curve/z85Decode (.secretKey server-keys))
+          client-keys (ZMQ$Curve/generateKeyPair)
+          client-public (ZMQ$Curve/z85Decode (.publicKey client-keys))
+          client-secret (ZMQ$Curve/z85Decode (.secretKey client-keys))
           ctx (ZMQ/context 1)]
       (println "Encrypted Router-Dealer test")
       (try
         (let [router (.socket ctx ZMQ/ROUTER)]
           (try
             ;; python unit tests treat this as read-only
-            (.setLongSockopt router 47 1)   ; server?
+            (.setCurveServer router true)   ; server?
             ;; Most unit tests I see online set this.
             ;; The official suite doesn't.
             ;(.setBytesSockopt router 50 server-public) ; curve-server-key
             ;; Definitely don't need client keys
             ;(.setBytesSockopt router 48 client-public) ; curve-public-key
             ;(.setBytesSockopt router 49 client-secret) ; curve-secret-key
-            (.setBytesSockopt router 49 server-secret)
+            (.setCurveSecretKey router server-secret)
             (.setIdentity router (.getBytes "SOMETHING"))  ; IDENT...doesn't seem to matter
             (let [dealer (.socket ctx ZMQ/DEALER)]
               (try
-                (.setLongSockopt dealer 47 0)
+                (.setCurveServer dealer false)
                 ;(.setBytesSockopt dealer 49 server-secret)
                 ;; Q: Do I actually need to set this?
-                (.setBytesSockopt dealer 50 server-public) ; curve-server-key
-                (.setBytesSockopt dealer 48 client-public) ; curve-public-key
-                (.setBytesSockopt dealer 49 client-secret) ; curve-secret-key
+                (.setCurveServerKey dealer server-public) ; curve-server-key
+                (.setCurvePublicKey dealer client-public) ; curve-public-key
+                (.setCurveSecretKey dealer client-secret) ; curve-secret-key
                 ;; Note that just getting this far is a fairly significant
                 ;; victory
                 (finally (.close dealer))))
@@ -111,8 +110,8 @@
 
 (deftest test-encrypted-req-rep
   "Translated directly from my java unit test"
-  (let [client-keys (ZCurveKeyPair/Factory)
-        server-keys (ZCurveKeyPair/Factory)
+  (let [client-keys (ZMQ$Curve/generateKeyPair)
+        server-keys (ZMQ$Curve/generateKeyPair)
         ctx (ZMQ/context 1)
         in (.socket ctx ZMQ/REQ)]
     (println "Encrypted req/rep inproc test")
@@ -144,8 +143,8 @@
 
 (deftest test-encrypted-push-pull
   "Translated directly from my java unit test"
-  (let [client-keys (ZCurveKeyPair/Factory)
-        server-keys (ZCurveKeyPair/Factory)
+  (let [client-keys (ZMQ$Curve/generateKeyPair)
+        server-keys (ZMQ$Curve/generateKeyPair)
         ctx (ZMQ/context 1)
         in (.socket ctx ZMQ/PUSH)]
     (println "Encrypted push/pull inproc test")
@@ -168,8 +167,8 @@
 
 (deftest test-encrypted-router-dealer
   "Translated directly from my java unit test"
-  (let [client-keys (ZCurveKeyPair/Factory)
-        server-keys (ZCurveKeyPair/Factory)
+  (let [client-keys (ZMQ$Curve/generateKeyPair)
+        server-keys (ZMQ$Curve/generateKeyPair)
         ctx (ZMQ/context 1)
         in (.socket ctx ZMQ/DEALER)]
     (println "Encrypted router-dealer inproc test")
@@ -215,8 +214,8 @@
   (println "Dealer<->Router CURVE checked"))
 
 (deftest test-encrypted-router-dealer-over-tcp
-  (let [client-keys (ZCurveKeyPair/Factory)
-        server-keys (ZCurveKeyPair/Factory)
+  (let [client-keys (ZMQ$Curve/generateKeyPair)
+        server-keys (ZMQ$Curve/generateKeyPair)
         ctx (ZMQ/context 1)
         in (.socket ctx ZMQ/DEALER)]
     (println "Encrypted router-dealer TCP test")
@@ -398,8 +397,8 @@
                                 (try
                                   (.connect client url)
                                   (try
-                                    (let [server-thread 
-                                          (future 
+                                    (let [server-thread
+                                          (future
                                             (println "Server: Waiting on encrypted message from dealer")
                                             (let [greet (.recv server)]  ;; TODO: Add a timeout so we don't block everything
                                               (is (= "OLEH" (String. greet)))

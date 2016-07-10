@@ -1,11 +1,11 @@
 (ns cljeromq.core-test
   (:import [org.zeromq ZMQ ZMQException])
   (:require [cljeromq.core :as core]
-            [midje.sweet :refer :all]))
+            [clojure.test :refer [deftest testing is]]))
 
 (defn setup
   [uri client-type server-type]
-  (let [ctx (ZMQ/context 1)]
+  (let [ctx (ZMQ/context 2)]
     (let [client (.socket ctx client-type)]
       (.connect client uri)
       (let [server (.socket ctx server-type)]
@@ -29,148 +29,127 @@
 
 ;; Even though I'm not using JNI at all any more.
 ;; At least, I think it's gone.
-(facts "JNI"
-  (fact "Basic req/rep inproc handshake test"
+(deftest test-jni
+  (testing "Basic req/rep inproc handshake test"
         (let [uri "inproc://a-test-1"
               [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
           (try
             (let [client (future (.send req "HELO")
                                  (String. (.recv req)))]
               (let [greet (.recv rep)]
-                (String. greet) => "HELO")
+                (is (= "HELO" (String. greet))))
               (.send rep "kthxbye")
-              @client => "kthxbye")
+              (is (= "kthxbye" @client)))
             (finally
-              ;; Can't unbind inproc socket
-              ;; This is actually Bug #949 in libzmq.
-              ;; It should be fixed in 4.1.0, but backporting to 4.0.x
-              ;; has been deemed not worth the effort
-              (.unbind rep uri) => (throws ZMQException #"No such file or directory")
+              (.unbind rep uri)
               (teardown {:context ctx
                          :client req
                          :server rep
                          :uri uri
                          :unbind-server? false})))))
-  (fact "Basic req/rep TCP handshake test"
+  (testing "Basic req/rep TCP handshake test"
         (let [uri "tcp://127.0.0.1:8709"
               [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
           (try
             (let [client (future (.send req "HELO")
-                                 (String. (.recv req)))]
+                                 (println "HELO sent from client. Waiting on response from server")
+                                 (let [client-result (String. (.recv req))]
+                                   (println "Server response to handshake received")
+                                   client-result))]
               (let [greet (.recv rep)]
-                "HELO" => (String. greet))
-              (.send rep "kthxbye")
-              @client => "kthxbye")
+                (println "Server received greeting from client")
+                (is (= "HELO" (String. greet))))
+              (println "Sending response from server to client")
+              (let [response "kthxbye"]
+                (.send rep response)
+                (println "Verifying that client received the response we sent")
+                (is (= response @client))))
             (finally
               (teardown ctx req rep uri))))))
 
-(facts "Basic functionality"
-       (let [ctx (core/context 1)]
-         (try
-           (let [url "tcp://localhost:10101"
-                 sender (core/socket! ctx :req)
-                 receiver (core/socket! ctx :rep)]
-             (try
+(defn req-rep-wrapper
+  [msg]
+ (let [uri "tcp://127.0.0.1:10101"
+       [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
+   (try
+     (println "Sending" msg)
+     (core/send! req msg 0)
+     (println "Waiting to receive")
+     (let [received (core/recv! rep 0)]
+       (is (= msg received)))
+     (finally
+       (println "Tearing down")
+       (teardown ctx req rep uri)))))
+
+(deftest transmit-string
+  (req-rep-wrapper "xbcAzy"))
+
+(deftest transmit-keyword
+  (req-rep-wrapper :message))
+
+(deftest transmit-sequence
+  (req-rep-wrapper (list :a 3 "abc")))
+
+(deftest transmit-integer
+  (req-rep-wrapper 1000))
+
+(deftest transmit-float
+  (req-rep-wrapper Math/PI))
+
+(deftest transmit-bigint
+  (req-rep-wrapper 1000000M))
+
+(comment
+  ;; Q: What would this look like?
+  (deftest transmit-multiple-sequences
+    (req-rep-wrapper )))
+
+(deftest basic-macros
+  (testing "Basic message exchange with macros"
+         (println "Setting up context")
+         (core/with-context [ctx 1]
+           (println "Setting up receiver")
+           (core/with-socket! [receiver ctx :rep]
+             (testing "Macro created local"
+               (is (= receiver receiver)))
+             (println "Receiver: " receiver)
+
+             ;; TODO: Don't hard-code this port number
+             (let [url  "tcp://127.0.0.1:10102"]
+               (println "Binding receiver")
                (core/bind! receiver url)
-               (core/connect! sender url)
+               (println "Setting up sender")
+               (core/with-socket! [sender ctx :req]
+                 (println "Connecting sender")
+                 (core/connect! sender url)
 
-               (println "Starting tests")
-               ;; TODO: Really should split these up.
-               ;; Configuring the context and sockets is part of setUp.
-               ;; That would allow tests to proceed after a previous
-               ;; one fails.
-               ;; OTOH: Really should be using :dealer and :router...
-               ;; except that, for this scenario, :req and :rep are
-               ;; actually exactly what I want, once this actually works.
+                 (testing "Connected"
+                   (is (= 0 0)))
 
-               (fact "Transmit string"
-                     (let [msg "xbcAzy"]
-                       (comment (println "Sending " msg))
-                       (core/send! sender msg)
-                       (comment (println "Receiving"))
-                       (let [received (core/recv! receiver :wait)]
-                         received => msg)))
-               (comment (trace "String sent and received"))
+                 (testing "Transmit string"
+                   (let [msg "abcxYz1"]
+                     (core/send! sender msg 0)
+                     (let [result (core/recv! receiver 0)]
+                       (is (=  msg result)))))
 
-               (fact "Transmit keyword"
-                     (let [msg :message]
-                       (println "Sending: " msg)
-                       (core/send! receiver msg)
-                       (println msg " -- sent")
-                       (let [received (core/recv! sender)]
-                         received => msg)))
+                 (testing "Transmit keyword"
+                   (let [msg :something]
+                     (core/send! receiver msg 0)
+                     (let [result (core/recv! sender 0)]
+                       (is (= msg result)))))))))))
 
-               (fact "Transmit sequence"
-                     (let [msg (list :a 3 "abc")]
-                       (core/send! sender msg)
-                       (let [received (core/recv! receiver)]
-                         received => msg)))
+(deftest check-unbinding
+  (core/with-context [ctx 1]
+    (core/with-socket! [nothing ctx :rep]
+      (let [addr "tcp://127.0.0.1:5678"]
+        (core/bind! nothing addr)
+        (println "Bound" nothing "to" addr)
+        (is true)
+        (core/unbind! nothing addr)
+        (println "Unbound" nothing "from" addr)
+        (is true)))))
 
-               (future-fact "Transmit integer"
-                     (let [msg 1000]
-                       (core/send! receiver msg)
-                       (let [received (core/raw-recv! sender)]
-                         received => msg)))
-
-               (future-fact "Transmit float"
-                     (let [msg Math/PI]
-                       (core/send! sender msg)
-                       (let [received (core/raw-recv! receiver)]
-                         received => msg)))
-
-               (future-fact "Transmit big integer"
-                     (let [msg 1000M]
-                       (core/send! receiver msg)
-                       (let [received (core/raw-recv sender)]
-                         received => msg)))
-
-               (comment (future-fact "Transmit multiple sequences"
-                                     ;; Q: What could this look like?
-                                     ))
-               (finally (core/unbind! receiver url)
-                        (core/close! receiver)
-                        (core/disconnect! sender url)
-                        (core/close! sender))))
-           (finally (core/terminate! ctx)))))
-
-(facts "Basic message exchange with macros"
-       (println "Setting up context")
-       (core/with-context [ctx 1]
-         (println "Setting up receiver")
-         (core/with-socket! [receiver ctx :rep]
-           (fact "Macro created local"
-                 receiver => receiver)
-           (println "Receiver: " receiver)
-
-           ;; TODO: Don't hard-code this port number
-           (let [url  "tcp://localhost:10101"]
-             (println "Binding receiver")
-             (core/bind! receiver url)
-             (println "Setting up sender")
-             (core/with-socket! [sender ctx :req]
-               (println "Connecting sender")
-               (core/connect! sender url)
-
-               (fact "Connected"
-                     0 => 0)
-
-               (fact "Transmit string"
-                     (let [msg "abcxYz1"]
-                       (core/send! sender msg)
-                       (let [result (core/recv! receiver)]
-                         msg => result)))
-
-               (fact "Transmit keyword"
-                     (let [msg :something]
-                       (core/send! receiver msg)
-                       (let [result (core/recv! sender)]
-                         msg => result))))))))
-
-
-(facts "Check unbinding"
-       (core/with-context [ctx 1]
-         (core/with-socket [nothing ctx :rep]
-           (let [addr "tcp://*:5678"]
-             (core/bind! nothing addr)
-             (println "Have a socket bound")
-             (core/unbind! nothing addr)))))
+(deftest check-unbinding-macro
+  (core/with-context [ctx 1]
+    (core/with-bound-socket! [nothing ctx :rep "tcp://127.0.0.1:5679"]
+      (is true))))
