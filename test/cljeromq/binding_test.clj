@@ -292,10 +292,19 @@ TODO: Replicate this in C or python to see if it really is this fragile"
               (.close out))))
         (finally
           (println "Unbinding the Dealer socket from" server-url)
-          ;; This is throwing an exception.
-          ;; Q: Why?
-          (.unbind in server-url)
-          (println "Dealer socket unbound")))
+          (try
+            (.unbind in server-url)
+            (println "Dealer socket unbound")
+            (catch ZMQException _
+              ;; This is throwing an exception.
+              ;; Q: Why?
+              ;; A: Well...there's an old issue about unbinding inproc and wildcard
+              ;; connections. That supposedly never affected 4.1 and has been back-ported
+              ;; to 4.0.
+              ;; According to my 4.1 built-in tests, it isn't an issue there, either
+              ;; Q: Could I possibly still have an obsolete 4.0 version lurking around
+              ;; being used?
+              (println "Failed to unbind the Dealer socket. Annoying.")))))
       (finally
         (.close in)
         (.term ctx)))))
@@ -306,14 +315,17 @@ TODO: Replicate this in C or python to see if it really is this fragile"
         server (.socket ctx ZMQ/ROUTER)
         server-url "tcp://*:54398"]
     (try
-      (println "Unencrypted dealer/router over TCP")
       ;; Q: Does this step still matter?
-      (.setIdentity server (.getBytes "insecure router/dealer over TCP"))
+      ;; A: No.
+      (comment (.setIdentity server (.getBytes "insecure router/dealer over TCP")))
       (.bind server server-url)
       (try
         (let [client (.socket ctx ZMQ/DEALER)
               client-url "tcp://127.0.0.1:54398"]
           (try
+            ;; Q: Does this step make any difference?
+            ;; A: Absolutely. This actually seems like a Very Bad Thing.
+            (.setIdentity client (.getBytes "insecure dealer over TCP"))
             (.connect client client-url)
             (try
               (dotimes [n 10]
@@ -346,9 +358,10 @@ TODO: Replicate this in C or python to see if it really is this fragile"
             (finally
               (.close client))))
         (finally
-          (println "Unbinding the Router socket from" server-url)
-          (.unbind server server-url)
-          (println "Dealer socket unbound")))
+          (try
+            (.unbind server server-url)
+            (catch ZMQException _
+              (println "Unbinding Router socket failed. Annoying.")))))
       (finally
         (.close server)
         (.term ctx)))))
