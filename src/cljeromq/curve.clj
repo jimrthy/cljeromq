@@ -15,6 +15,15 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Public
 
+(s/defn z85-encode :- s/Str
+  [blob :- byte-array-type]
+  (ZMQ$Curve/z85Encode blob))
+
+(s/defn z85-decode :- byte-array-type
+  [blob :- s/Str]
+  (ZMQ$Curve/z85Decode blob))
+
+
 (s/defn new-key-pair :- key-pair
   "Return a map of new public/private keys in ByteBuffers.
 It's very tempting to return them as Strings instead, because
@@ -30,8 +39,8 @@ e.g.
   (let [pair (ZMQ$Curve/generateKeyPair)
         public (.-publicKey pair)
         private (.-secretKey pair)]
-       {:public (ZMQ$Curve/z85Decode public)
-        :private (ZMQ$Curve/z85Decode private)}))
+       {:public (z85-decode public)
+        :private (z85-decode private)}))
 
 (s/defn make-socket-a-server!
   "Adjust sock so that it's ready to serve CURVE-encrypted messages."
