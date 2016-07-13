@@ -36,32 +36,36 @@
     (println "Encrypted Push-Server thread started")
     (mq/with-socket! [pusher ctx :push]
       (enc/make-socket-a-server! pusher (:private server-keys))
-      (mq/connect! pusher url)
-      (dotimes [i 10]
-        (println "Push" (inc i))
-        (mq/send! pusher (str msg i "\n") 0))))
+      (mq/bind! pusher url)
+      (try
+        (dotimes [i 10]
+          (println "Push" (inc i))
+          (mq/send! pusher (str msg i "\n") 0))
+        (finally
+          (comment (mq/unbind! pusher url))))
+      (println "push-encrypted thread completed")))
 
   (deftest basic-socket-encryption
-         (println "Checking encrypted push/pull interaction")
-         (mq/with-context [ctx 1]
-           (let [server-keys (enc/new-key-pair)
-                 msg "Encrypted push "
-                 push-thread (future (push-encrypted ctx server-keys msg))]
-             (mq/with-socket! [puller ctx :pull]
-               (let [client-keys (enc/new-key-pair)]
-                 (enc/prepare-client-socket-for-server! puller
-                                                        client-keys
-                                                        (:public server-keys))
-                 (mq/bind! puller url)
-                 (println "Puller Bound")
-                 (try
-                   (testing "pulls what was pushed"
-                         (dotimes [i 10]
-                           (println "Pulling #" (inc i))
-                           (is (= (str msg i "\n") (mq/recv! puller)))))
-                   (testing "What does msg/send return?"
-                         (println "Waiting on Encrypted Push thread to exit")
-                         (is (nil? @push-thread))
-                         (println "Encrypted Push thread exited"))
-                   (finally (mq/unbind! puller url)
-                            (println "Encrypted push-pull cleaned up")))))))))
+    (println "Checking encrypted push/pull interaction")
+    (mq/with-context [ctx 2]
+      (let [server-keys (enc/new-key-pair)
+            msg "Encrypted push "
+            push-thread (future (push-encrypted ctx server-keys msg))]
+        (mq/with-socket! [puller ctx :pull]
+          (let [client-keys (enc/new-key-pair)]
+            (enc/prepare-client-socket-for-server! puller
+                                                   client-keys
+                                                   (:public server-keys))
+            (mq/connect! puller url)
+            (println "Puller Bound")
+            (try
+              (testing "pulls what was pushed"
+                (dotimes [i 10]
+                  (println "Pulling #" (inc i))
+                  (is (= (str msg i "\n") (mq/recv! puller)))))
+              (testing "Push thread exited"
+                (println "Waiting on Encrypted Push thread to exit")
+                (is (realized? push-thread))
+                (println "Encrypted Push thread exited"))
+              (finally (comment (mq/disconnect! puller url))
+                       (println "Encrypted push-pull cleaned up")))))))))

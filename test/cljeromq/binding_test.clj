@@ -1,5 +1,10 @@
 (ns cljeromq.binding-test
-  "This namespace is poorly named. It's really where
+  "This namespace is poorly named.
+
+It was supposed to only be about checking socket binding
+and other low-level options.
+
+It wound up being really where
 all the interesting parts happen"
   (:import [org.zeromq ZMQ
             ZMQException
