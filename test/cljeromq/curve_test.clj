@@ -139,29 +139,32 @@
   (defn push-encrypted [ctx server-keys msg]
     (println "Encrypted Push-Server thread started")
     (mq/with-socket! [pusher ctx :push]
-      (enc/make-socket-a-server! pusher (:private server-keys))
+      (curve/make-socket-a-server! pusher (:private server-keys))
       (mq/bind! pusher url)
       (try
         (dotimes [i 10]
           (println "Push" (inc i))
           (mq/send! pusher (str msg i "\n") 0))
         (finally
-          (comment (mq/unbind! pusher url))))
+          (comment) (mq/unbind! pusher url)))
       (println "push-encrypted thread completed")))
 
   (deftest basic-socket-encryption
     (println "Checking encrypted push/pull interaction")
     (mq/with-context [ctx 2]
-      (let [server-keys (enc/new-key-pair)
+      (let [server-keys (curve/new-key-pair)
             msg "Encrypted push "
             push-thread (future (push-encrypted ctx server-keys msg))]
         (mq/with-socket! [puller ctx :pull]
-          (let [client-keys (enc/new-key-pair)]
-            (enc/prepare-client-socket-for-server! puller
+          (let [client-keys (curve/new-key-pair)]
+            (curve/prepare-client-socket-for-server! puller
                                                    client-keys
                                                    (:public server-keys))
+            ;; Q: surely this doesn't matter, does it?
+            ;; A: Nope, doesn't seem to
+            (Thread/sleep 10)
             (mq/connect! puller url)
-            (println "Puller Bound")
+            (println "Puller Connected")
             (try
               (testing "pulls what was pushed"
                 (dotimes [i 10]
@@ -174,45 +177,41 @@
               (finally (comment (mq/disconnect! puller url))
                        (println "Encrypted push-pull cleaned up")))))))))
 
-(deftest create-curve-sockets-test
-  (testing "Slap together basic server socket options"
-    (let [server-keys (ZMQ$Curve/generateKeyPair)
-          server-public (ZMQ$Curve/z85Decode (.publicKey server-keys))
-          server-secret (ZMQ$Curve/z85Decode (.secretKey server-keys))
-          client-keys (ZMQ$Curve/generateKeyPair)
-          client-public (ZMQ$Curve/z85Decode (.publicKey client-keys))
-          client-secret (ZMQ$Curve/z85Decode (.secretKey client-keys))
-          ctx (ZMQ/context 1)]
-      (println "Encrypted Router-Dealer test")
+(deftest test-encrypted-tcp-push-pull
+  (let [client-keys (curve/new-key-pair)
+        server-keys (curve/new-key-pair)
+        ctx (ZMQ/context 2)
+        server (.socket ctx ZMQ/PUSH)
+        url "tcp://127.0.0.1:54387"]
+    (try
+      (curve/make-socket-a-server! server (:private server-keys))
+      (.bind server url)
       (try
-        (let [router (.socket ctx ZMQ/ROUTER)]
+        (let [client (.socket ctx ZMQ/PULL)]
           (try
-            ;; python unit tests treat this as read-only
-            (.setCurveServer router true)   ; server?
-            ;; Most unit tests I see online set this.
-            ;; The official suite doesn't.
-            ;; Definitely should not.
-            ;(.setBytesSockopt router 50 server-public) ; curve-server-key
-            ;; Definitely don't need client keys
-            ;(.setBytesSockopt router 48 client-public) ; curve-public-key
-            ;(.setBytesSockopt router 49 client-secret) ; curve-secret-key
-            (.setCurveSecretKey router server-secret)
-            ;; IDENT...doesn't seem to matter
-            ;; Absolutely vital for the Dealer sockets, though
-            (.setIdentity router (.getBytes "SOMETHING"))
-            (let [dealer (.socket ctx ZMQ/DEALER)]
-              (try
-                (.setCurveServer dealer false)
-                ;(.setBytesSockopt dealer 49 server-secret)
-                ;; Q: Do I actually need to set this?
-                (.setCurveServerKey dealer server-public) ; curve-server-key
-                (.setCurvePublicKey dealer client-public) ; curve-public-key
-                (.setCurveSecretKey dealer client-secret) ; curve-secret-key
-                ;; Note that just getting this far is a fairly significant
-                ;; victory
-                (finally (.close dealer))))
-            (finally (.close router))))
-        (finally (.term ctx))))))
+            (curve/prepare-client-socket-for-server! client client-keys (:public server-keys))
+            (.connect client url)
+            (println "Starting the real encrypted push/pull test")
+            (try
+              (dotimes [n 10]
+                (let [req (.getBytes (str "request" n))]
+                  (println "Sending request" n)
+                  (let [success (.send server req 0)]
+                    (when-not success
+                      (throw (ex-info "Failed" {}))))
+                  (println "Waiting for response" n)
+                  (let [response (.recv client 0)]
+                    (is (= (String. req) (String. response))))))
+              (finally
+                (println "Disconnecting client")
+                (.disconnect client url)))
+            (finally (.close client))))
+        (finally
+          (.unbind server url)))
+      (finally
+        (.close server)
+        (println "Terminating context for encrypted push/pull over TCP")
+        (.term ctx)))))
 
 (deftest test-encrypted-tcp-dealer-router
   (let [client-keys (curve/new-key-pair)
