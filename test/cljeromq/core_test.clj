@@ -1,6 +1,6 @@
 (ns cljeromq.core-test
   (:import [org.zeromq ZMQ ZMQException])
-  (:require [cljeromq.core :as core]
+  (:require [cljeromq.core :as mq]
             [clojure.test :refer [deftest testing is]]))
 
 (defn setup
@@ -73,9 +73,9 @@
        [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
    (try
      (println "Sending" msg)
-     (core/send! req msg 0)
+     (mq/send! req msg 0)
      (println "Waiting to receive")
-     (let [received (core/recv! rep 0)]
+     (let [received (mq/recv! rep 0)]
        (is (= msg received)))
      (finally
        (println "Tearing down")
@@ -110,9 +110,9 @@
 (deftest basic-macros
   (testing "Basic message exchange with macros"
          (println "Setting up context")
-         (core/with-context [ctx 1]
+         (mq/with-context [ctx 1]
            (println "Setting up receiver")
-           (core/with-socket! [receiver ctx :rep]
+           (mq/with-socket! [receiver ctx :rep]
              (testing "Macro created local"
                (is (= receiver receiver)))
              (println "Receiver: " receiver)
@@ -120,39 +120,281 @@
              ;; TODO: Don't hard-code this port number
              (let [url  "tcp://127.0.0.1:10102"]
                (println "Binding receiver")
-               (core/bind! receiver url)
+               (mq/bind! receiver url)
                (println "Setting up sender")
-               (core/with-socket! [sender ctx :req]
+               (mq/with-socket! [sender ctx :req]
                  (println "Connecting sender")
-                 (core/connect! sender url)
+                 (mq/connect! sender url)
 
                  (testing "Connected"
                    (is (= 0 0)))
 
                  (testing "Transmit string"
                    (let [msg "abcxYz1"]
-                     (core/send! sender msg 0)
-                     (let [result (core/recv! receiver 0)]
+                     (mq/send! sender msg 0)
+                     (let [result (mq/recv! receiver 0)]
                        (is (=  msg result)))))
 
                  (testing "Transmit keyword"
                    (let [msg :something]
-                     (core/send! receiver msg 0)
-                     (let [result (core/recv! sender 0)]
+                     (mq/send! receiver msg 0)
+                     (let [result (mq/recv! sender 0)]
                        (is (= msg result)))))))))))
 
-(deftest check-unbinding
-  (core/with-context [ctx 1]
-    (core/with-socket! [nothing ctx :rep]
-      (let [addr "tcp://127.0.0.1:5678"]
-        (core/bind! nothing addr)
-        (println "Bound" nothing "to" addr)
-        (is true)
-        (core/unbind! nothing addr)
-        (println "Unbound" nothing "from" addr)
-        (is true)))))
+(defn push-unencrypted [ctx msg]
+  (comment (println "Plain-text Push Server thread started"))
+  (mq/with-socket! [pusher ctx :push]
+    (mq/connect! pusher  "tcp://127.0.0.1:2101")
+    (dotimes [i 10]
+      (comment (println "Push " (inc i)))
+      (mq/send! pusher (str msg i) 0))))
 
-(deftest check-unbinding-macro
-  (core/with-context [ctx 1]
-    (core/with-bound-socket! [nothing ctx :rep "tcp://127.0.0.1:5679"]
-      (is true))))
+(deftest basic-push-pull
+       (println "Checking plain-text push/pull interaction")
+       (mq/with-context [ctx 2]
+         (mq/with-socket! [puller ctx :pull]
+           (let [url "tcp://127.0.0.1:2101"]
+             (mq/bind! puller url)
+             (try
+               (let [msg "Unencrypted push"
+                     push-thread (future (push-unencrypted ctx msg))]
+                 (testing "pulls what was pushed"
+                       (comment (println "Checking pulls"))
+                       (dotimes [i 10]
+                         (is (= (str msg i) (mq/recv! puller)))))
+                 (testing "What does msg/send return?"
+                       (println "Waiting on push-thread exit")
+                       (is (nil? @push-thread))
+                       (println "Unencrypted PUSH thread exited")))
+               (finally
+                 (mq/unbind! puller url)))))))
+
+(deftest req-rep-inproc-unencrypted-handshake
+  (testing "Basic inproc req/rep handshake test"
+    (let [uri "inproc://a-test-1"
+          ctx (ZMQ/context 1)]
+      (println "Checking req/rep unencrypted inproc")
+      (try
+        (let [req (.socket ctx ZMQ/REQ)]
+          (try
+            (.bind req uri)
+            (try
+              (let [rep (.socket ctx ZMQ/REP)]
+                (try
+                  (.connect rep uri)
+                  (try
+                    (let [client (future (.send req "HELO")
+                                         (String. (.recv req)))]
+                      (let [greet (.recv rep)]
+                        (is (= "HELO" (String. greet))))
+                      (.send rep "kthxbye")
+                      (is (= @client "kthxbye")))
+                    (finally
+                      (.disconnect rep uri)))
+                  (finally
+                    (.close rep))))
+              (finally
+                ;; Note that this should fail on 4.0.x
+                ;; It's a bug that was fixed in 4.1.0, but deemed unworthy
+                ;; of backporting
+                (.unbind req uri)))
+            (finally (.close req))))
+        (finally
+          (.term ctx))))))
+
+(deftest simplest-tcp-test
+  (testing "TCP REP/REQ handshake"
+    (let [uri "tcp://127.0.0.1:8592"
+          ctx (ZMQ/context 1)]
+      (println "Basic rep/req unencrypted TCP test")
+      (try
+        (let [req (.socket ctx ZMQ/REQ)]
+          (try
+            (.connect req uri)
+            (try
+              (let [rep (.socket ctx ZMQ/REP)]
+                (try
+                  (.bind rep uri)
+                  (try
+                    (let [client (future (.send req "HELO")
+                                         (String. (.recv req)))]
+                      (let [greet (.recv rep)]
+                        (is (= "HELO" (String. greet))))
+                      (.send rep "kthxbye")
+                      (println "Waiting on unencrypted response")
+                      (is (= @client "kthxbye"))
+                      (println "Plain TCP OK"))
+                    (finally
+                      (.unbind rep uri)))
+                  (finally
+                    (.close rep))))
+              (finally
+                (.disconnect req uri)))
+            (finally (.close req))))
+        (finally
+          (.term ctx))))))
+
+(deftest minimal-curveless-communication-test
+  (testing "Because communication is boring until the principals can swap messages"
+    (let [ctx (ZMQ/context 1)]
+      (println "Minimal rep/dealer unencrypted over TCP")
+      (try
+        (let [router (.socket ctx ZMQ/REP)]
+          (try
+            (let [localhost "tcp://127.0.0.1"
+                  port (.bindToRandomPort router localhost)
+                  url (str localhost ":" port)]
+              (try
+                (println "Doing unencrypted comms over '" url "'")
+                (let [dealer (.socket ctx ZMQ/DEALER)]
+                  (try
+                    (.setIdentity dealer (.getBytes (str (gensym))))
+                    (.connect dealer url)
+                    (try
+                      (let [resp (future (println "Dealer: sending greeting")
+                                         (is (.sendMore dealer ""))
+                                         (is (.send dealer "OLEH"))
+                                         (println "Dealer: greeting sent")
+                                         (let [separator (String. (.recv dealer))
+                                               _ (println "Dealer received separator frame:" separator)
+                                               result (String. (.recv dealer))]
+                                           (println "Dealer: received " result)
+                                           result))]
+                        (println "REP: Waiting on message from dealer")
+                        (let [greet (.recv router)]  ;; TODO: Add a timeout
+                          (is (= "OLEH" (String. greet)))
+                          (println "REP socket: greeting received")
+                          (is (.send router "cool"))
+                          (println "Router: Response sent")
+                          (is (= @resp "cool"))
+                          (println "Unencrypted Dealer<->REP: Handshook")))
+                      (finally (.disconnect dealer url)))
+                    (finally (.close dealer))))
+                (finally (.unbind router url))))
+            (finally (.close router))))
+        (finally (.term ctx))))))
+
+(deftest test-unencrypted-tcp-router-dealer
+  "It's backwards, but seems worth testing
+TODO: Replicate this in C or python to see if it really is this fragile"
+  (let [ctx (ZMQ/context 1)
+        in (.socket ctx ZMQ/DEALER)
+        server-url "tcp://*:54398"]
+    (try
+      (println "Unencrypted router/dealer over TCP")
+      ;; Note that this step is vital, even though it seems like a default
+      ;; should work.
+      ;; TODO: Duplicate this test but bind the router the way it will work
+      ;; in real life. See whether this step is required in than direction
+      (.setIdentity in (.getBytes "insecure router/dealer over TCP"))
+      (.bind in server-url)
+      (try
+        (let [out (.socket ctx ZMQ/ROUTER)
+              client-url "tcp://127.0.0.1:54398"]
+          (try
+            (.connect out client-url)
+            (try
+              (dotimes [n 10]
+                (let [s-req (str "request" n)
+                      req (.getBytes  s-req)
+                      rep (.getBytes (str "reply" n))]
+                  (.sendMore in "")
+                  (let [success (.send in req 0)]
+                    (when-not success
+                      (throw (ex-info (str "Sending request returned:" success) {}))))
+                  (let [id (.recv out 0)
+                        delimeter (.recv out 0)
+                        response (.recv out 0)
+                        s-rsp (String. response)]
+                    (when-not (= s-req s-rsp)
+                      (throw (ex-info (str "Sent '" s-req "' which consists of " (count req) " bytes\n"
+                                           "Received '" s-rsp "' which is " (count response)
+                                           " bytes long from " (String. id)))))
+                    (.sendMore out (String. id)))
+                  (.sendMore out "")
+                  (let [success (.send out (String. rep))]
+                    (when-not success
+                      (throw (ex-info (str "Error sending Reply: " success) {}))))
+                  (let [delimeter (.recv in 0)
+                        response (.recv in 0)
+                        s-response (String. response)]
+                    (is (= (String. rep) s-response)))))
+              (finally
+                (.disconnect out client-url)))
+            (finally
+              (.close out))))
+        (finally
+          (println "Unbinding the Dealer socket from" server-url)
+          (try
+            (.unbind in server-url)
+            (println "Dealer socket unbound")
+            (catch ZMQException _
+              ;; This is throwing an exception.
+              ;; Q: Why?
+              ;; A: Well...there's an old issue about unbinding inproc and wildcard
+              ;; connections. That supposedly never affected 4.1 and has been back-ported
+              ;; to 4.0.
+              ;; According to my 4.1 built-in tests, it isn't an issue there, either
+              ;; Q: Could I possibly still have an obsolete 4.0 version lurking around
+              ;; being used?
+              (println "Failed to unbind the Dealer socket. Annoying.")))))
+      (finally
+        (.close in)
+        (.term ctx)))))
+
+(deftest test-unencrypted-tcp-dealer-router
+  "Just like the router-dealer equivalent above, but w/ dealer as 'client'"
+  (let [ctx (ZMQ/context 1)
+        server (.socket ctx ZMQ/ROUTER)
+        server-url "tcp://*:54398"]
+    (try
+      ;; Q: Does this step still matter?
+      ;; A: No.
+      (comment (.setIdentity server (.getBytes "insecure router/dealer over TCP")))
+      (.bind server server-url)
+      (try
+        (let [client (.socket ctx ZMQ/DEALER)
+              client-url "tcp://127.0.0.1:54398"]
+          (try
+            ;; Q: Does this step make any difference?
+            ;; A: Absolutely. This actually seems like a Very Bad Thing.
+            (.setIdentity client (.getBytes "insecure dealer over TCP"))
+            (.connect client client-url)
+            (try
+              (dotimes [n 10]
+                (let [s-req (str "request" n)
+                      req (.getBytes  s-req)
+                      rep (.getBytes (str "reply" n))]
+                  (.sendMore client "")
+                  (let [success (.send client req 0)]
+                    (when-not success
+                      (throw (ex-info (str "Sending request returned:" success) {}))))
+                  (let [id (.recv server 0)
+                        delimeter (.recv server 0)
+                        response (.recv server 0)
+                        s-rsp (String. response)]
+                    (when-not (= s-req s-rsp)
+                      (throw (ex-info (str "Sent '" s-req "' which consists of " (count req) " bytes\n"
+                                           "Received '" s-rsp "' which is " (count response)
+                                           " bytes long from " (String. id)))))
+                    (.sendMore server (String. id)))
+                  (.sendMore server "")
+                  (let [success (.send server (String. rep))]
+                    (when-not success
+                      (throw (ex-info (str "Error sending Reply: " success) {}))))
+                  (let [delimeter (.recv client 0)
+                        response (.recv client 0)
+                        s-response (String. response)]
+                    (is (= (String. rep) s-response)))))
+              (finally
+                (.disconnect client client-url)))
+            (finally
+              (.close client))))
+        (finally
+          (try
+            (.unbind server server-url)
+            (catch ZMQException _
+              (println "Unbinding Router socket failed. Annoying.")))))
+      (finally
+        (.close server)
+        (.term ctx)))))
