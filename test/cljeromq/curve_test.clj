@@ -140,12 +140,14 @@
     (println "Encrypted Push-Server thread started")
     (comment (mq/with-socket! [pusher ctx :push]))
     (let [pusher (.socket ctx ZMQ/PUSH)]
-      (curve/make-socket-a-server! pusher (:private server-keys))
-      (mq/bind! pusher url)
+      (comment (curve/make-socket-a-server! pusher (:private server-keys)))
+      (comment (mq/bind! pusher url))
+      (.bind pusher url)
       (try
         (dotimes [i 10]
           (println "Push" (inc i))
-          (mq/send! pusher (str msg i "\n") 0))
+          (comment (mq/send! pusher (str msg i "\n") 0))
+          (.send pusher (.getBytes (str msg i "\n")) 0))
         (finally
           (comment) (mq/unbind! pusher url)))
       (println "push-encrypted thread completed")))
@@ -160,9 +162,9 @@
         (comment (mq/with-socket! [puller ctx :pull]))
         (let [puller (.socket ctx ZMQ/PULL)]
           (let [client-keys (curve/new-key-pair)]
-            (curve/prepare-client-socket-for-server! puller
-                                                     client-keys
-                                                     (:public server-keys))
+            (comment (curve/prepare-client-socket-for-server! puller
+                                                              client-keys
+                                                              (:public server-keys)))
             ;; Q: surely this doesn't matter, does it?
             ;; A: Nope, doesn't seem to
             (Thread/sleep 10)
@@ -172,7 +174,7 @@
               (testing "pulls what was pushed"
                 (dotimes [i 10]
                   (println "Pulling #" (inc i))
-                  (comment (is (= (str msg i "\n") (mq/recv! puller))))))
+                  (comment) (is (= (str msg i "\n") (String. #_(mq/recv! puller) (.recv puller 0))))))
               (testing "Push thread exited"
                 (println "Waiting on Encrypted Push thread to exit")
                 (is (realized? push-thread))
@@ -213,6 +215,58 @@
           (.unbind server url)))
       (finally
         (.close server)
+        (println "Terminating context for encrypted push/pull over TCP")
+        (.term ctx)))))
+
+(defn push-from-background-thread
+  [ctx
+   server-private-key
+   url]
+  (future
+    (let [server (.socket ctx ZMQ/PUSH)]
+      (try
+        (curve/make-socket-a-server! server server-private-key)
+        (.bind server url)
+        (try
+          (dotimes [n 10]
+            (println "Sending request" n)
+            (let [req (.getBytes (str "request" n))
+                  success (.send server req 0)]
+                  (when-not success
+                    (throw (ex-info "Failed" {})))))
+          (finally
+            (.unbind server url)))
+        (finally
+          (.close server))))))
+
+(deftest test-multithreaded-encrypted-tcp-push-pull
+  ;; Now I'm getting somewhere. This doesn't work either
+  (let [client-keys (curve/new-key-pair)
+        server-keys (curve/new-key-pair)
+        ctx (ZMQ/context 2)
+        url "tcp://127.0.0.1:54386"]
+    (try
+      (let [server-future (push-from-background-thread ctx (:private server-keys) url)
+            client (.socket ctx ZMQ/PULL)]
+        (try
+          (curve/prepare-client-socket-for-server! client client-keys (:public server-keys))
+          (.connect client url)
+          (println "Starting the real encrypted push/pull test")
+          (try
+            (dotimes [n 10]
+              (let [req (.getBytes (str "request" n))]
+                (println "Waiting for response" n)
+                ;; TODO: Yet another place where I really need a timeout
+                (let [response (.recv client 0)]
+                  (is (= (String. req) (String. response))))))
+            (finally
+              (println "Disconnecting client")
+              (.disconnect client url)))
+          (finally (.close client)
+                   (testing "Server thread exited"
+                     ;; TODO: Verify that the result wasn't an exception
+                     (is (realized? server-future))))))
+      (finally
         (println "Terminating context for encrypted push/pull over TCP")
         (.term ctx)))))
 
