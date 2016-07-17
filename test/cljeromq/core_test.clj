@@ -2,13 +2,15 @@
   (:import [org.zeromq
             ZMQ
             ZMQException])
-  (:require [cljeromq.core :as mq]
+  (:require [cljeromq.common :as common]
+            [cljeromq.core :as mq]
             [clojure.test :refer [deftest testing is]]))
 
 (defn setup
   [uri client-type server-type]
   (let [ctx (ZMQ/context 2)]
     (let [client (.socket ctx client-type)]
+      ;; TODO: Switch to using a random port instead
       (.connect client uri)
       (let [server (.socket ctx server-type)]
         (.bind server uri)
@@ -16,18 +18,21 @@
 
 (defn teardown
   ([{:keys [context client server uri unbind-server?]}]
-     (when unbind-server?
-       (.unbind server uri))
-     (.close server)
-     (.disconnect client uri)
-     (.close client)
-     (.term context))
+   (when unbind-server?
+     (.unbind server uri))
+   (.close server)
+   (.disconnect client uri)
+   (.close client)
+   (try
+     (.term context)
+     (catch Exception ex
+       (println "Teardown failed:" ex))))
   ([ctx client server uri]
-     (teardown {:context ctx
-                :client client
-                :server server
-                :uri uri
-                :unbind-server? true})))
+   (teardown {:context ctx
+              :client client
+              :server server
+              :uri uri
+              :unbind-server? true})))
 
 ;; Even though I'm not using JNI at all any more.
 ;; At least, I think it's gone.
@@ -78,40 +83,48 @@
  (let [uri "tcp://127.0.0.1:10101"
        [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
    (try
-     (println "Sending" msg)
-     (mq/send! req msg 0)
-     (println "Waiting to receive")
+     (try
+       (mq/send! req msg 0)
+       (catch Exception ex
+         (is false (str "Sending failed:" ex))))
      (let [received (mq/recv! rep 0)]
        (is (= msg received)))
      (finally
-       (println "Tearing down")
        (teardown ctx req rep uri)))))
 
 (deftest transmit-string
-  (req-rep-wrapper "xbcAzy"))
+  (testing "String transmission"
+    (req-rep-wrapper "xbcAzy")))
 
 (deftest transmit-keyword
-  (req-rep-wrapper :message))
+  (testing "Keyword transmission"
+    (req-rep-wrapper :message)))
 
 (deftest transmit-sequence
-  (req-rep-wrapper (list :a 3 "abc")))
+  (testing "Sequence transmission"
+    (req-rep-wrapper (list :a 3 "abc"))))
 
 (deftest transmit-integer
-  (req-rep-wrapper 1000))
+  (testing "Integer transmission"
+    (req-rep-wrapper 1000)))
 
 (deftest transmit-float
-  (req-rep-wrapper Math/PI))
+  (testing "Float transmission"
+    (req-rep-wrapper Math/PI)))
 
 (deftest transmit-bigdecimal
-  (req-rep-wrapper 1000000M))
+  (testing "Big Decimal transmission"
+    (req-rep-wrapper 1000000M)))
 
 (deftest transmit-bigint
-  (req-rep-wrapper 2000000N))
+  (testing "Big Int transmission"
+    (req-rep-wrapper 2000000N)))
 
 (comment
   ;; Q: What would this look like?
   (deftest transmit-multiple-sequences
-    (req-rep-wrapper )))
+    (testing "Transmitting multiple sequences"
+      (req-rep-wrapper ))))
 
 (deftest basic-macros
   (testing "Basic message exchange with macros"
@@ -200,7 +213,6 @@ TODO: Make sure they work the same"
         ;; has been deemed not worth the effort
         (try
           (.unbind rep uri)
-          (is false "0mq bug got fixed")
           (catch ZMQException ex
             (is (= ex "No such file or directory"))))
         (teardown {:context ctx
@@ -261,17 +273,17 @@ TODO: Verify it"
 
 (deftest string->bytes->string []
   (let [s "The quick red fox jumped over the lazy brown dog"
-        bs (core/string->bytes s)
-        round-tripped (core/bytes->string bs)]
+        bs (mq/string->bytes s)
+        round-tripped (mq/bytes->string bs)]
     (is (= round-tripped s) "Conversion failed")
-    (is (= (class bs) core/byte-array-class))))
+    (is (= (class bs) common/byte-array-type))))
 
 (deftest url-basics []
   (let [url {:protocol :tcp
              :address [0 0 0 0]
              :port 7681}]
     (is (= "tcp://0.0.0.0:7681"
-           (core/connection-string url)))))
+           (mq/connection-string url)))))
 
 (defn push-unencrypted [ctx msg]
   (comment (println "Plain-text Push Server thread started"))

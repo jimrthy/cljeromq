@@ -41,12 +41,12 @@ to make swapping back and forth seamless."
 ;;; of the actual code.
 
 (def InternalPair
-  "I don't like these names. But I really have to pick something arbitrary"
+  "Pair of inproc sockets
+
+I don't like these names. But I really have to pick *something*"
   {:lhs common/Socket
    :rhs common/Socket
    :url s/Str})
-
-(def byte-array-class (Class/forName "[B"))
 
 (def socket-types (s/enum :req :rep
                           :pub :sub
@@ -331,37 +331,24 @@ Returns the port number"
 
 (s/defmethod send! byte-array-type
   [socket :- common/Socket ^bytes message flags]
-  (println "Sending byte array on" socket "\nFlags:" flags)
-  (when-not (.send socket message 0 flags)
+  (comment (println "Sending byte array on" socket "\nFlags:" flags))
+  (when-not (.send socket message 0 (count message) (K/flags->const flags))
     (throw (ex-info "Sending failed" {:not-implemented "What went wrong?"}))))
 
 (s/defmethod send! String
   ([socket :- common/Socket message :- s/Str flags]
-     ;; FIXME: Debug only
-     (comment (println "Sending string:\n" message))
-     ;; My original plan was that this would convert the string
-     ;; to clojure.core$bytes, so it would call the method above
-     (send! socket (.getBytes message) flags))
+   (comment (println "Sending string:\n" message))
+   ;; My original plan was that this would convert the string
+   ;; to clojure.core$bytes, so it would call the method above
+   (send! socket (.getBytes message) flags))
   ([socket :- common/Socket message :- s/Str]
-     (io! (send! socket message :dont-wait))))
-
-(s/defmethod send! byte-array-class
-  ([socket :- common/Socket message]
-   (send! socket message [:dont-wait]))
-  ([socket :- common/Socket message flags]
-   ;; Java parameters:
-   ;; java byte array message
-   ;; offset - where the message starts in that array?
-   ;; number of bytes to send
-   ;; flags
-   (comment (println "Sending a byte array"))
-   (.send socket message 0 (count message) (K/flags->const flags))))
+   (io! (send! socket message :dont-wait))))
 
 (s/defmethod send! :default
   ([socket :- common/Socket message flags]
-   (comment)
-   (println "Default Send trying to transmit:\n" message "\n(a"
-            (class message) ")")
+   (comment
+     (println "Default Send trying to transmit:\n" message "\n(a"
+              (class message) ")"))
    (when (nil? message)
      (throw (NullPointerException. (str "Trying to send on" socket "with flags" flags))))
    ;; For now, assume that we'll only be transmitting something
@@ -370,10 +357,13 @@ Returns the port number"
    ;; The messaging layer really shouldn't be responsible for
    ;; serialization at all, but it makes sense to at least start
    ;; this out here.
-   (send! socket (-> K/const :flag :edn), :send-more)
+   (comment (println "Sending the EDN header"))
+   (send! socket (-> K/const :flag :edn) :send-more)
+   (comment (println "Sending the 'encoded' message"))
    (send! socket (pr-str message) flags)
+   (comment (println "Default send! complete")))
   ([socket :- common/Socket message]
-   (send! socket message :dont-wait))))
+   (send! socket message :dont-wait)))
 
 (s/defn send-and-forget!
   "Send message, returning immediately.
@@ -470,8 +460,9 @@ More importantly (probably) is EDN."
               ;; FIXME: Really should loop and build up a sequence.
               ;; Absolutely nothing says this will be transmitted one
               ;; form at a time.
-              ;; Well, except that doing that is purposefully
-              ;; difficult.
+              ;; Well, except that doing that is deliberately
+              ;; difficult because it's a terrible thing to do
+              ;; TODO: Allow callers to specify custom readers
               (edn/read-string actual-content)))
           s)))))
   ([socket :- common/Socket]
