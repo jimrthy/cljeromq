@@ -1,7 +1,15 @@
 (ns cljeromq.common
-  (:require [schema.core :as s]))
+  (:import [org.zeromq
+            ZMQ$Context
+            ZMQ$Poller
+            ZMQ$Socket]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Schema
 
-(s/def byte-array-type (Class/forName "[B"))
+(def byte-array-type (Class/forName "[B"))
+
+;;; Aliases to avoid the ugly java-style nested class names
+(def Context ZMQ$Context)
+(def Poller ZMQ$Poller)
+(def Socket ZMQ$Socket)

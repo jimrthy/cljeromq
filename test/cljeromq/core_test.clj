@@ -1,5 +1,7 @@
 (ns cljeromq.core-test
-  (:import [org.zeromq ZMQ ZMQException])
+  (:import [org.zeromq
+            ZMQ
+            ZMQException])
   (:require [cljeromq.core :as mq]
             [clojure.test :refer [deftest testing is]]))
 
