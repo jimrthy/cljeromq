@@ -21,9 +21,10 @@
 Should probably update the API to keep it compatible w/ cljzmq
 to make swapping back and forth seamless."
   (:refer-clojure :exclude [proxy send])
-  (:require [cljeromq.constants :as K]
+  (:require [cljeromq.common :as common :refer (byte-array-type)]
+            [cljeromq.constants :as K]
             [clojure.edn :as edn]
-            [ribol.core :refer (raise)]
+            [clojure.string :as string]
             [schema.core :as s])
   (:import [java.net InetAddress]
            [java.nio ByteBuffer]
@@ -82,6 +83,9 @@ to make swapping back and forth seamless."
               ;; TODO: Actually, this is a short
               (s/optional-key :port) s/Int})
 
+(defmulti send! (fn [^Socket socket message flags]
+                  (class message)))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Helpers
 
@@ -126,7 +130,7 @@ Q: Why didn't I name this context! ?"
   ([]
      (let [cpu-count (.availableProcessors (Runtime/getRuntime))]
        ;; Go with maximum as default
-       (context (dec cpu-count)))))
+       (context (max 1 (dec cpu-count))))))
 
 (s/defn terminate!
   "Stop a messaging context.
@@ -336,11 +340,14 @@ Returns the port number"
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Send
 
-(defmulti send! (fn [^ZMQ$Socket socket message & flags]
-                  (class message)))
+(defmethod send! byte-array-type
+  [^ZMQ$Socket socket ^bytes message flags]
+  (println "Sending byte array on" socket "\nFlags:" flags)
+  (when-not (.send socket message 0 flags)
+    (throw (ex-info "Sending failed" {:not-implemented "What went wrong?"}))))
 
 (defmethod send! String
-  ([^ZMQ$Socket socket ^String message flags]
+  ([^Socket socket ^String message flags]
      ;; FIXME: Debug only
      (comment (println "Sending string:\n" message))
      ;; My original plan was that this would convert the string
@@ -374,11 +381,18 @@ Returns the port number"
    ;; The messaging layer really shouldn't be responsible for
    ;; serialization at all, but it makes sense to at least start
    ;; this out here.
-   (send! socket (pr-str message) flags))
+   (send! socket (-> K/const :flag :edn), :send-more)
+   (send! socket (pr-str message) flags)
   ([^ZMQ$Socket socket message]
-   (send! socket message :dont-wait)))
+   (send! socket message :dont-wait)))))
 
-(s/defn send-partial! [socket :- ZMQ$Socket message]
+(defn send-and-forget!
+  "Send message, returning immediately.
+  Just assume that it succeeded."
+  [^ZMQ$Socket socket ^String message]
+  (io! (send! socket message :dont-wait)))
+
+(s/defn send-partial! [socket :- Socket message]
   "I'm seeing this as a way to send all the messages in an envelope, except
 the last.
 Yes, it seems dumb, but it was convenient at one point.
@@ -401,6 +415,8 @@ It totally falls apart when I'm just trying to send a string."
 ;;; Questionable Helpers
 
 (defn proxy_
+=======
+(defn proxy
   "Reads from f-in as long as there are messages available,
 forwarding to f-out.
 
@@ -447,7 +463,7 @@ with core clojure functionality"
   "For receiving non-binary messages.
 Strings are the most obvious alternative.
 More importantly (probably) is EDN."
-  ([^ZMQ$Socket socket flags]
+  ([^Socket socket flags]
    (comment (println "\tListening. Flags: " flags))
    (io!
     (when-let [^bytes binary (raw-recv! socket flags)]
@@ -470,21 +486,21 @@ More importantly (probably) is EDN."
               ;; difficult.
               (edn/read-string actual-content)))
           s)))))
-  ([#^ZMQ$Socket socket]
+  ([#^Socket socket]
    (recv! socket :wait)))
 
 (s/defn recv-all!
   "Receive all available message parts.
 Q: Does it make sense to accept flags here?
 A: Absolutely. May want to block or not."
-  ([socket :- ZMQ$Socket flags]
+  ([socket :- Socket flags]
       (loop [acc []]
         (let [msg (recv! socket flags)
               result (conj acc msg)]
           (if (has-more? socket)
             (recur result)
             result))))
-  ([socket :- ZMQ$Socket]
+  ([socket :- Socket]
      ;; FIXME: Is this actually the flag I want?
      (recv-all! socket :wait)))
 
@@ -492,9 +508,9 @@ A: Absolutely. May want to block or not."
 ;; that I've re-written above.
 ;; FIXME: Verify that. See what (if anything) is worth saving.
 (s/defn recv-str! :- s/Str
-  ([socket :- ZMQ$Socket]
+  ([socket :- Socket]
       (-> socket recv! String. .trim))
-  ([socket :- ZMQ$Socket flags]
+  ([socket :- Socket flags]
      ;; This approach risks NPE:
      ;;(-> socket (recv flags) String. .trim)
      (when-let [s (recv! socket flags)]
@@ -503,9 +519,9 @@ A: Absolutely. May want to block or not."
 (s/defn recv-all-str! :- [s/Str]
   "How much overhead gets added by just converting the received primitive
 Byte[] to strings?"
-  ([socket :- ZMQ$Socket]
+  ([socket :- Socket]
      (recv-all-str! socket 0))
-  ([socket :- ZMQ$Socket flags]
+  ([socket :- Socket flags]
      (let [packets (recv-all! socket flags)]
        (map #(String. %) packets))))
 
@@ -514,9 +530,9 @@ Byte[] to strings?"
 It's also quite convenient:
 read a string from a socket and convert it to a clojure object.
 That's how this is really meant to be used, if you can trust your peers."
-  ([socket :- ZMQ$Socket]
+  ([socket :- Socket]
      (-> socket recv-str! read))
-  ([socket :- ZMQ$Socket flags]
+  ([socket :- Socket flags]
      (when-let [s (recv-str! socket flags)]
        (edn/read-string s))))
 
@@ -530,7 +546,7 @@ Callers probably shouldn't be using something this low-level.
 Except when they need to.
 There doesn't seem any good reason to put effort into hiding it."
   [socket-count :- s/Int]
-  (ZMQ$Poller. socket-count))
+  (Poller. socket-count))
 
 (s/defn poll :- s/Int
   "Returns the number of sockets available in the poller
@@ -547,11 +563,21 @@ ISeq and return the next message as it becomes ready."
   ([poller :- Poller timeout :- s/Int]
      (.poll poller timeout)))
 
-(s/defn register-socket-in-poller!
-  "Register a socket to poll on."
-  [poller :- Poller
-   socket :- Socket]
-  (io! (.register poller socket (K/poll-opts :poll-in))))
+(s/defn ^:always-validate register-socket-in-poller!
+  "Register a socket to poll 'in'."
+  ([socket :- Socket
+    poller :- Poller]
+   (let [^Long flag (K/control->const :poll-in)]
+     (io! (.register poller socket flag))))
+  ([socket :- Socket
+    poller :- Poller
+    flag :- s/Keyword
+    & more-flags]
+   ;; TODO: Verify that this does what I think with various flag keyword combinations
+   (let [^Long actual-flags (K/flags->const (conj more-flags flag))]
+     ;; If nothing else, needs a unit test
+     (throw (ex-info "Check this" {}))
+     (io! (.register poller socket actual-flags))))))
 
 (s/defn unregister-socket-in-poller!
   [poller :- Poller
@@ -565,22 +591,20 @@ Of course, a big part of the point to real pollers is
 dealing with multiple sockets"
   ;; It's pretty blatant that I haven't had any time to
   ;; do anything that resembles testing this code.
-  `(let [~poller-name (cljeromq.core/poller ~context)]
-     ;; poller-name might be OK to deref multiple times, since it's
-     ;; almost definitely a symbol.
-     ;; That same is true of socket, isn't it?
-     ;; TODO: Ask Steven
-     (cljeromq.core/register-socket-in-poller!  ~socket ~poller-name :poll-in :poll-err)
+  `(let [pn# (cljeromq.core/poller ~context)
+         ~poller-name pn#]
+     (cljeromq.core/register-socket-in-poller!  ~socket pn# :poll-in :poll-err)
      (try
        ~@body
        (finally
-         (cljeromq.core/unregister-socket-in-poller! ~socket ~poller-name)))))
+         (cljeromq.core/unregister-socket-in-poller! ~socket pn#)))))
 
 (s/defn socket-poller-in!
   "Attach a new poller to a seq of sockets.
 Honestly, should be smarter and just let me poll on a single socket."
   [sockets :- [Socket]]
   (let [checker (poller (count sockets))]
+    ;; TODO: Convert to run! instead (?)
     (doseq [s sockets]
       (register-socket-in-poller! s checker))
     checker))
@@ -616,19 +640,19 @@ Currently, I only need this one."
         (str base ":" port)
         base))))
 
-(s/defn dump! :- s/Str
-  "Cheeseball first draft at just logging incoming messages.
-This approach is pretty awful...at the very least it should build
-a string and return that.
-Then again, it's fairly lispy...callers can always rediret STDOUT."
+(s/defn dump :- s/Str
+  "Log incoming messages"
   [socket :- Socket]
-  (with-out-str
-    (println (->> "-" repeat (take 38) (apply str)))
-    (doseq [msg (recv-all! socket 0)]
-    (print (format "[%03d] " (count msg)))
-    (if (and (= 17 (count msg)) (= 0 (first msg)))
-      (println (format "UUID %s" (-> msg ByteBuffer/wrap .getLong)))
-      (println (-> msg String. .trim))))))
+  (let [seperator (->> "-" repeat (take 38) (apply str))
+        ;; Q: How can I type-hint msg (which should be a Byte Array)
+        ;; to avoid reflection warnings?
+        formatted (map (fn [msg]
+                         (str (format "[%03d] " (count msg))
+                              (if (and (= 17 (count msg)) (= 0 (first msg)))
+                                (format "UUID %s" (-> msg ByteBuffer/wrap .getLong))
+                                (-> msg String. .trim))))
+                       (recv-all! socket 0))]
+    (string/join \newline (concat [seperator] formatted))))
 
 (s/defn set-id!
   ([socket :- Socket

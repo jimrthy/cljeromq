@@ -30,7 +30,11 @@ Although, really, that's almost pedantic."
 
              ;; More message parts are coming
              :sndmore ZMQ/SNDMORE
-             :send-more ZMQ/SNDMORE}
+             :send-more ZMQ/SNDMORE
+
+             :poll-in ZMQ$Poller/POLLIN
+             :poll-out ZMQ$Poller/POLLOUT
+             :poll-err ZMQ$Poller/POLLERR}
 
    :device {:forwarder ZMQ/FORWARDER  ; 2
             :queue ZMQ/QUEUE   ; 3
@@ -50,9 +54,9 @@ Although, really, that's almost pedantic."
              :poll-out ZMQ$Poller/POLLOUT
              :poll-err ZMQ$Poller/POLLERR}
 
-   ;; TODO: Access these via iroh?
+   ;; These should be public now
+   ;; TODO: Verify and switch
    :socket-options {:curve-server 47   ; ZMQ/CURVE_SERVER  ; 1 for yes, 0 for no
-                    ;; the next two are for the client
                     :curve-public-key 48  ; ZMQ/CURVE_PUBLIC_KEY
                     :curve-secret-key 49  ; ZMQ/CURVE_SECRET_KEY
                     ;; The server just needs the private key
@@ -77,8 +81,8 @@ Although, really, that's almost pedantic."
                  ;; Extended Publish/Subscribe
                  :x-pub ZMQ/XPUB
                  :x-sub ZMQ/XSUB
-                 ;; Push/Pull
 
+                 ;; Push/Pull
                  :push ZMQ/PUSH
                  :pull ZMQ/PULL
 
@@ -120,15 +124,12 @@ Although, really, that's almost pedantic."
   "Use in conjunction with control-const to convert a series
 of/individual keyword into a logical-or'd flag to control
 socket options."
-  (if-let [result (if (or (seq? flags)
-                          (vector? flags))
-                    (reduce bit-or
-                            0
-                            (map control->const flags))
-                    (control->const flags))]
-    result
-    (throw (ex-info "NULL flags specified"
-                    {:requested flags}))))
+  (or (if (sequential? flags)
+        (reduce bit-or
+                0
+                (map control->const flags))
+        (control->const flags))
+      0))
 
 (s/defn sock->const :- s/Int
   "Convert a socket keyword to a ZMQ constant"

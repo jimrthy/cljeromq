@@ -1,20 +1,28 @@
 (ns cljeromq.curve
-  (:require #_[byte-streams :as b-s]
+  (:require [cljeromq.common :as common :refer (byte-array-type)]
             [cljeromq.constants :as K]
             [cljeromq.core :as cljeromq]
             [schema.core :as s])
-  (:import [org.zeromq ZCurveKeyPair ZMQ$Context ZMQ$Socket]))
+  (:import [org.zeromq ZMQ$Curve ZMQ$Curve$KeyPair ZMQ$Context ZMQ$Socket])
+  (:gen-class))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Schema
-
-(s/def byte-array-type (Class/forName "[B"))
 
 (s/defschema key-pair {:public byte-array-type
                        :private byte-array-type})
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Public
+
+(s/defn z85-encode :- s/Str
+  [blob :- byte-array-type]
+  (ZMQ$Curve/z85Encode blob))
+
+(s/defn z85-decode :- byte-array-type
+  [blob :- s/Str]
+  (ZMQ$Curve/z85Decode blob))
+
 
 (s/defn new-key-pair :- key-pair
   "Return a map of new public/private keys in ByteBuffers.
@@ -28,17 +36,19 @@ array if you need that.
 e.g.
 ;; (def s (String. (.array buffer)))"
   []
-  (let [pair (ZCurveKeyPair/Factory)]
-       {:public (.getPublicKey pair)
-        :private (.getPrivateKey pair)}))
+  (let [pair (ZMQ$Curve/generateKeyPair)
+        public (.-publicKey pair)
+        private (.-secretKey pair)]
+       {:public (z85-decode public)
+        :private (z85-decode private)}))
 
 (s/defn make-socket-a-server!
-  "Adjust sock so that it's ready to serve CURVE-encrypted messages.
-Documentation seems fuzzy about whether or not it also needs to set
-the public key."
+  "Adjust sock so that it's ready to serve CURVE-encrypted messages."
   [sock :- ZMQ$Socket
    private-key :- byte-array-type]
-  (.makeIntoCurveServer sock private-key)
+  (io!
+   (.setCurveServer sock true)
+   (.setCurveSecretKey sock private-key))
 
   ;; TODO: Move this comment into jzmq
   ;; official tests also set the ZMQ_IDENTITY option.
@@ -64,7 +74,10 @@ Which seems like a truly horrid idea."
   [sock :- ZMQ$Socket
    {:keys [public private :as client-key-pair]} :- key-pair
    server-public-key :- byte-array-type]
-  (.makeIntoCurveClient sock (ZCurveKeyPair. public private) server-public-key))
+  (io!
+   (.setCurvePublicKey sock public)
+   (.setCurveSecretKey sock private)
+   (.setCurveServerKey sock server-public-key)))
 
 (s/defn server-socket :- ZMQ$Socket
   "Create a new socket suitable for use as a CURVE server.
@@ -75,7 +88,7 @@ make-socket-a-server!"
    type :- s/Keyword
    private-key :- byte-array-type]
   (let [s (cljeromq/socket! ctx type)]
-    (.make-socket-a-server! s private-key)
+    (make-socket-a-server! s private-key)
     s))
 
 (defn build-authenticator
@@ -84,9 +97,10 @@ make-socket-a-server!"
   ;; This isn't actually part of libzmq. It's in czmq.
   ;; Q: Require that or re-implement?
   ;; Q: For that matter, which is more authoritative?
-  ;; A: czmq is a convenience layer atop libzmq.
+  ;; A: czmq is the higher level wrapper atop libzmq.
   ;; Other language bindings are expected to provide
   ;; something along the same lines.
+  ;; (And jzmq definitely does, so we need to here as well)
   (throw (RuntimeException. "What happened to zauth_new?")))
 
 ;; TODO:
