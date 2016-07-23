@@ -119,6 +119,10 @@ Although, really, that's almost pedantic."
   (comment (println "Extracting " key))
   ((const :control) key))
 
+(s/defn error->const :- s/Int
+  [which :- s/Keyword]
+  ((:error const) which))
+
 (s/defn flags->const :- s/Int
   [flags :- keyword-or-seq]
   "Use in conjunction with control-const to convert a series
