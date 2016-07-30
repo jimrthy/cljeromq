@@ -190,26 +190,26 @@ up the server side of an interaction."
     (catch ZMQException ex
       (throw (ex-info "Binding Failed"
                       {:url url}
-                      ex))))
+                      ex)))))
 
-  (s/defn bind-random-port! :- s/Int
-    "Binds to the first free port. Endpoint should be of the form
+(s/defn bind-random-port! :- s/Int
+  "Binds to the first free port. Endpoint should be of the form
 \"<transport>://address\". (It automatically adds the port).
 Returns the port number"
-    ([socket :- common/Socket endpoint :- s/Str]
-     (let [port (bind-random-port! socket endpoint 49152 65535)]
-       (println (str "Managed to bind to port '" port "'"))
-       port))
-    ([socket :- common/Socket
-      endpoint :- s/Str
-      min :- s/Int]
-     (bind-random-port! socket endpoint min 65535))
-    ([socket :- common/Socket
-      endpoint :- s/Str
-      min :- s/Int
-      max :- s/Int]
-     (io!
-      (.bindToRandomPort socket endpoint min max)))))
+  ([socket :- common/Socket endpoint :- s/Str]
+   (let [port (bind-random-port! socket endpoint 49152 65535)]
+     (println (str "Managed to bind to port '" port "'"))
+     port))
+  ([socket :- common/Socket
+    endpoint :- s/Str
+    min :- s/Int]
+   (bind-random-port! socket endpoint min 65535))
+  ([socket :- common/Socket
+    endpoint :- s/Str
+    min :- s/Int
+    max :- s/Int]
+   (io!
+    (.bindToRandomPort socket endpoint min max))))
 
 (s/defn unbind! :- s/Int
   [socket :- common/Socket
