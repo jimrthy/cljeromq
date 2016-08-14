@@ -11,6 +11,10 @@
 (def byte-array-type (Class/forName "[B"))
 (s/def ::byte-array-type #(instance? byte-array-type %))
 (s/def ::byte-array-seq (s/coll-of ::byte-array-type))
+;; I hated this name the first few times I ran across it in argument lists.
+;; Now that I've typed out the full keyword-or-keywords often enough, I get it.
+(s/def ::korks (s/or :single-key keyword?
+                     :multi-keys (s/coll-of keyword?)))
 
 (comment
   (let [string->bytes #(->> % (map (comp byte int)) byte-array)
