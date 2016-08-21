@@ -2,29 +2,42 @@
   (:require [cljeromq.common :as common :refer (byte-array-type)]
             [cljeromq.constants :as K]
             [cljeromq.core :as cljeromq]
-            [schema.core :as s])
+            [clojure.spec :as s]
+            [schema.core :as s2])
   (:import [org.zeromq ZMQ$Curve ZMQ$Curve$KeyPair ZMQ$Context ZMQ$Socket])
   (:gen-class))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Schema
 
-(s/defschema key-pair {:public byte-array-type
-                       :private byte-array-type})
+(s2/defschema key-pair {:public byte-array-type
+                        :private byte-array-type})
+;; Really just a shortcut to help reduce typing
+(s/def ::byte-array-type
+  :cljeromq.common/byte-array-type)
+(s/def ::public ::byte-array-type)
+(s/def ::private ::byte-array-type)
+(s/def ::key-pair (s/keys :req-un [::public ::private]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Public
 
-(s/defn z85-encode :- s/Str
+(s/fdef z85-encode
+        :args (s/cat :blob ::byte-array-type)
+        :ret string?)
+(s2/defn z85-encode :- s2/Str
   [blob :- byte-array-type]
   (ZMQ$Curve/z85Encode blob))
 
-(s/defn z85-decode :- byte-array-type
-  [blob :- s/Str]
+(s/fdef z85-decode
+        :args (s/cat :blob string?)
+        :ret ::byte-array-type)
+(s2/defn z85-decode :- byte-array-type
+  [blob :- s2/Str]
   (ZMQ$Curve/z85Decode blob))
 
-
-(s/defn new-key-pair :- key-pair
+(s/fdef new-key-pair :ret ::key-pair)
+(s2/defn new-key-pair :- key-pair
   "Return a map of new public/private keys in ByteBuffers.
 It's very tempting to return them as Strings instead, because
 that seems like it would be easiest to deal with. But I
@@ -42,7 +55,10 @@ e.g.
        {:public (z85-decode public)
         :private (z85-decode private)}))
 
-(s/defn make-socket-a-server!
+(s/fdef make-socket-a-server!
+        :args (s/cat :sock :cljeromq.common/socket
+                     :private-key ::byte-array-type))
+(s2/defn make-socket-a-server!
   "Adjust sock so that it's ready to serve CURVE-encrypted messages."
   [sock :- ZMQ$Socket
    private-key :- byte-array-type]
@@ -66,7 +82,11 @@ e.g.
   ;; So...probably a good idea to do, at least in theory.
   )
 
-(s/defn prepare-client-socket-for-server!
+(s/fdef prepare-client-socket-for-server!
+        :args (s/cat :sock :cljeromq.common/socket
+                     :key-pair ::key-pair
+                     :server-public-key ::byte-array-type))
+(s2/defn prepare-client-socket-for-server!
   "Adjust socket options to make it suitable for connecting as
 a client to a server identified by server-key
 TODO: I'm mixing/matching JNA and JNI.
@@ -79,13 +99,18 @@ Which seems like a truly horrid idea."
    (.setCurveSecretKey sock private)
    (.setCurveServerKey sock server-public-key)))
 
-(s/defn server-socket :- ZMQ$Socket
+(s/fdef server-socket
+        :args (s/cat :ctx :cljeromq.common/context
+                     :type :cljeromq.common/socket-type
+                     :private-key ::byte-array-type)
+        :ret :cljeromq.common/socket)
+(s2/defn server-socket :- ZMQ$Socket
   "Create a new socket suitable for use as a CURVE server.
 There isn't really anything interesting here. Create a new
 socket of the specified type then run it through
 make-socket-a-server!"
   [ctx :- ZMQ$Context
-   type :- s/Keyword
+   type :- s2/Keyword
    private-key :- byte-array-type]
   (let [s (cljeromq/socket! ctx type)]
     (make-socket-a-server! s private-key)

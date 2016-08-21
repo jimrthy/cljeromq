@@ -24,7 +24,7 @@ to make swapping back and forth seamless."
             [cljeromq.constants :as K]
             [clojure.edn :as edn]
             [clojure.string :as string]
-            [schema.core :as s])
+            [schema.core :as s2])
   (:import [java.net InetAddress]
            [java.nio ByteBuffer]
            [java.util Random]
@@ -46,31 +46,34 @@ to make swapping back and forth seamless."
 I don't like these names. But I really have to pick *something*"
   {:lhs common/Socket
    :rhs common/Socket
-   :url s/Str})
+   :url s2/Str})
 
-(def socket-types (s/enum :req :rep
-                          :pub :sub
-                          :x-pub :x-sub
-                          :push :pull
-                          :router :dealer
-                          :xreq :xrep  ; obsolete names for router/dealer
-                          :pair))
+(def socket-types
+  "Obsolete: switch to the spec defined in common instead"
+  (s2/enum :req :rep
+           :pub :sub
+           :x-pub :x-sub
+           :push :pull
+           :router :dealer
+           :xreq :xrep  ; obsolete names for router/dealer
+           :pair))
 
 (def zmq-protocol
   ;; TODO: Look up the rest
-  (s/enum :tcp :inproc))
+  (s2/enum :tcp :inproc))
 
-(def zmq-address (s/either
-                  [s/Int]  ; 4 bytes
+(def zmq-address (s2/either
+                  [s2/Int]  ; 4 bytes
                   ;; hostname
-                  s/Str
+                  s2/Str
                   ;; ??? for IPv6
                   ))
+
 
 (def zmq-url {:protocol zmq-protocol
               :address zmq-address
               ;; TODO: Actually, this is a short
-              (s/optional-key :port) s/Int})
+              (s2/optional-key :port) s2/Int})
 
 (defmulti send! (fn [socket message flags]
                   (class message)))
@@ -93,14 +96,14 @@ I don't like these names. But I really have to pick *something*"
     {:code code
      :message (.toString message)})))
 
-(s/defn has-more?
+(s2/defn has-more?
   [sock :- common/Socket]
   (.hasReceiveMore sock))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Public
 
-(s/defn context :- common/Context
+(s2/defn context :- common/Context
   "Create a messaging contexts.
 threads is the number of threads to use. Should never be larger than (dec cpu-count).
 
@@ -114,14 +117,14 @@ do anything more complicated than creating the context when your app starts and 
 terminate! on it just before it exits.
 
 Q: Why didn't I name this context! ?"
-  ([thread-count :- s/Int]
+  ([thread-count :- s2/Int]
      (io! (ZMQ/context thread-count)))
   ([]
      (let [cpu-count (.availableProcessors (Runtime/getRuntime))]
        ;; Go with maximum as default
        (context (max 1 (dec cpu-count))))))
 
-(s/defn terminate!
+(s2/defn terminate!
   "Stop a messaging context.
 If you have outgoing sockets with a linger value (which is the default), this will block until
 those messages are received."
@@ -137,30 +140,30 @@ Seems like a great idea in theory, but doesn't seem all that useful in practice"
      (try ~@body
           (finally (terminate! ~id)))))
 
-(s/defn ^:always-validate socket! :- common/Socket
+(s2/defn ^:always-validate socket! :- common/Socket
   "Create a new socket.
 TODO: the type really needs to be an enum of keywords"
   [ctx :- common/Context type :- socket-types]
   (let [^Integer real-type (K/sock->const type)]
     (io! (.socket ctx real-type))))
 
-(s/defn set-linger!
+(s2/defn set-linger!
   [s :- common/Socket
-   n :- s/Int]
+   n :- s2/Int]
   (io!
    (.setLinger s n)))
 
-(s/defn set-router-mandatory!
+(s2/defn set-router-mandatory!
   "This is hugely important
 
 Desperately needs documentation"
   ([s :- common/Socket]
    (set-router-mandatory! s true))
   ([s :- common/Socket
-    on :- s/Bool]
+    on :- s2/Bool]
    (.setRouterMandatory s on)))
 
-(s/defn close!
+(s2/defn close!
   "You're done with a socket."
   [s :- common/Socket]
   ;; Q: Is it more appropriate to wrap both in io!
@@ -177,14 +180,14 @@ Desperately needs documentation"
      (try ~@body
           (finally (close! ~name)))))
 
-(s/defn bind!
+(s2/defn bind!
   "Associate this socket with a stable network interface/port.
 Any given machine can only have one socket bound to one endpoint at any given time.
 
 It might be helpful (though ultimately misleading) to think of this call as setting
 up the server side of an interaction."
   [socket :- common/Socket
-   url :- s/Str]
+   url :- s2/Str]
   (try
     (io! (.bind socket url))
     (catch ZMQException ex
@@ -192,28 +195,28 @@ up the server side of an interaction."
                       {:url url}
                       ex)))))
 
-(s/defn bind-random-port! :- s/Int
+(s2/defn bind-random-port! :- s2/Int
   "Binds to the first free port. Endpoint should be of the form
 \"<transport>://address\". (It automatically adds the port).
 Returns the port number"
-  ([socket :- common/Socket endpoint :- s/Str]
+  ([socket :- common/Socket endpoint :- s2/Str]
    (let [port (bind-random-port! socket endpoint 49152 65535)]
      (println (str "Managed to bind to port '" port "'"))
      port))
   ([socket :- common/Socket
-    endpoint :- s/Str
-    min :- s/Int]
+    endpoint :- s2/Str
+    min :- s2/Int]
    (bind-random-port! socket endpoint min 65535))
   ([socket :- common/Socket
-    endpoint :- s/Str
-    min :- s/Int
-    max :- s/Int]
+    endpoint :- s2/Str
+    min :- s2/Int
+    max :- s2/Int]
    (io!
     (.bindToRandomPort socket endpoint min max))))
 
-(s/defn unbind! :- s/Int
+(s2/defn unbind! :- s2/Int
   [socket :- common/Socket
-   url :- s/Str]
+   url :- s2/Str]
   (io!
    (try
      ;; TODO: Check the protocol.
@@ -227,11 +230,11 @@ Returns the port number"
                         :socket socket}
                        ex))))))
 
-(s/defn bound-socket! :- common/Socket
+(s2/defn bound-socket! :- common/Socket
   "Return a new socket bound to the specified address"
   [ctx :- common/Context
-   type :- s/Keyword
-   url :- s/Str]
+   type :- s2/Keyword
+   url :- s2/Str]
   (let [s (socket! ctx type)]
     (bind! s url)
     s))
@@ -258,14 +261,14 @@ Returns the port number"
          (println "DEBUG only: randomly bound port # " '~port-name)
          ~body))))
 
-(s/defn connect!
+(s2/defn connect!
   [socket :- common/Socket
-   url :- s/Str]
+   url :- s2/Str]
   (io! (.connect socket url)))
 
-(s/defn disconnect!
+(s2/defn disconnect!
   [socket :- common/Socket
-   url :- s/Str]
+   url :- s2/Str]
   (io! (.disconnect socket url)))
 
 (defmacro with-connected-socket!
@@ -279,31 +282,31 @@ Returns the port number"
          (finally
            (.disconnect ~name# ~url#))))))
 
-(s/defn connected-socket!
+(s2/defn connected-socket!
   "Returns a new socket connected to the specified URL"
   [ctx :- common/Context
-   type :- s/Keyword
-   url :- s/Str]
+   type :- s2/Keyword
+   url :- s2/Str]
   (let [s (socket! ctx type)]
     (connect! s url)
     s))
 
-(s/defn subscribe!
+(s2/defn subscribe!
   "SUB sockets won't start receiving messages until they've subscribed"
-  ([socket :- common/Socket topic :- s/Str]
+  ([socket :- common/Socket topic :- s2/Str]
    (io! (.subscribe socket (.getBytes topic))))
   ([socket :- common/Socket]
      ;; Subscribes to all incoming messages
      (subscribe! socket "")))
 
-(s/defn unsubscribe!
-  ([socket :- common/Socket topic :- s/Str]
+(s2/defn unsubscribe!
+  ([socket :- common/Socket topic :- s2/Str]
    (io! (.unsubscribe socket (.getBytes topic))))
   ([socket :- common/Socket]
    ;; Q: This *does* unsubscribe from everything, doesn't it?
    (unsubscribe! socket "")))
 
-(s/defn build-internal-pair! :- InternalPair
+(s2/defn build-internal-pair! :- InternalPair
   [ctx :- common/Context]
   (io! (let [url (str "inproc://" (gensym))]
          ;; Note that, according to the docs,
@@ -315,7 +318,7 @@ Returns the port number"
           :lhs (connected-socket! ctx :pair url)
           :url url})))
 
-(s/defn close-internal-pair!
+(s2/defn close-internal-pair!
   [pair :- InternalPair]
   ;; Q: Is there any point to setting linger to 0?
   (println "cljeromo: Stopping an internal pair")
@@ -329,22 +332,22 @@ Returns the port number"
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Send
 
-(s/defmethod send! byte-array-type
+(s2/defmethod send! byte-array-type
   [socket :- common/Socket ^bytes message flags]
   (comment (println "Sending byte array on" socket "\nFlags:" flags))
   (when-not (.send socket message 0 (count message) (K/flags->const flags))
     (throw (ex-info "Sending failed" {:not-implemented "What went wrong?"}))))
 
-(s/defmethod send! String
-  ([socket :- common/Socket message :- s/Str flags]
+(s2/defmethod send! String
+  ([socket :- common/Socket message :- s2/Str flags]
    (comment (println "Sending string:\n" message))
    ;; My original plan was that this would convert the string
    ;; to clojure.core$bytes, so it would call the method above
    (send! socket (.getBytes message) flags))
-  ([socket :- common/Socket message :- s/Str]
+  ([socket :- common/Socket message :- s2/Str]
    (io! (send! socket message :dont-wait))))
 
-(s/defmethod send! :default
+(s2/defmethod send! :default
   ([socket :- common/Socket message flags]
    (comment
      (println "Default Send trying to transmit:\n" message "\n(a"
@@ -365,20 +368,20 @@ Returns the port number"
   ([socket :- common/Socket message]
    (send! socket message :dont-wait)))
 
-(s/defn send-and-forget!
+(s2/defn send-and-forget!
   "Send message, returning immediately.
   Just assume that it succeeded."
-  [socket :- common/Socket message :- s/Str]
+  [socket :- common/Socket message :- s2/Str]
   (io! (send! socket message :dont-wait)))
 
-(s/defn send-partial! [socket :- common/Socket message]
+(s2/defn send-partial! [socket :- common/Socket message]
   "I'm seeing this as a way to send all the messages in an envelope, except
 the last.
 Yes, it seems dumb, but it was convenient at one point.
 Honestly, that's probably a clue that this basic idea is just wrong."
   (send! socket message :send-more))
 
-(s/defn send-all! [socket :- common/Socket messages]
+(s2/defn send-all! [socket :- common/Socket messages]
   "At this point, I'm basically envisioning the usage here as something like HTTP.
 Where the headers back and forth carry more data than the messages.
 This approach is a total cop-out.
@@ -418,14 +421,14 @@ It totally falls apart when I'm just trying to send a string."
       (f-out msg)
       (recur (f-in)))))
 
-(s/defn identify!
-  [socket :- common/Socket name :- s/Str]
+(s2/defn identify!
+  [socket :- common/Socket name :- s2/Str]
   (io! (.setIdentity socket (.getBytes name))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Receive
 
-(s/defn raw-recv!  ; Returns byte array
+(s2/defn raw-recv!  ; Returns byte array
   ([socket :- common/Socket
     flags :- K/keyword-or-seq]
    (comment (println "Top of raw-recv"))
@@ -436,7 +439,7 @@ It totally falls apart when I'm just trying to send a string."
    (comment (println "Parameterless raw-recv"))
    (raw-recv! socket :wait)))
 
-(s/defn recv! :- s/Str
+(s2/defn recv! :- s2/Str
   "For receiving non-binary messages.
 Strings are the most obvious alternative.
 More importantly (probably) is EDN."
@@ -468,7 +471,7 @@ More importantly (probably) is EDN."
   ([socket :- common/Socket]
    (recv! socket :wait)))
 
-(s/defn recv-all!
+(s2/defn recv-all!
   "Receive all available message parts.
 Q: Does it make sense to accept flags here?
 A: Absolutely. May want to block or not."
@@ -486,7 +489,7 @@ A: Absolutely. May want to block or not."
 ;; that I've re-written above.
   ;; FIXME: Verify that. See what (if anything) is worth saving.
 
-(s/defn recv-str! :- s/Str
+(s2/defn recv-str! :- s2/Str
   ([socket :- common/Socket]
    (-> socket recv! String. .trim))
   ([socket :- common/Socket flags]
@@ -495,7 +498,7 @@ A: Absolutely. May want to block or not."
    (when-let [s (recv! socket flags)]
      (-> s String. .trim))))
 
-(s/defn recv-all-str! :- [s/Str]
+(s2/defn recv-all-str! :- [s2/Str]
   "How much overhead gets added by just converting the received primitive
 Byte[] to strings?"
   ([socket :- common/Socket]
@@ -504,7 +507,7 @@ Byte[] to strings?"
    (let [packets (recv-all! socket flags)]
      (map #(String. %) packets))))
 
-(s/defn recv-obj!
+(s2/defn recv-obj!
   "This function is horribly dangerous and really should not be used.
 It's also quite convenient:
 read a string from a socket and convert it to a clojure object.
@@ -520,16 +523,16 @@ That's how this is really meant to be used, if you can trust your peers."
 ;;; TODO: this part needs some TLC
 
 
-(s/defn poller :- common/Poller
+(s2/defn poller :- common/Poller
   "Return a new Poller instance.
 Callers probably shouldn't be using something this low-level.
 Except when they need to.
 There doesn't seem any good reason to put effort into hiding it."
-  [socket-count :- s/Int]
+  [socket-count :- s2/Int]
   ;; Can't use the convenience alias here
   (ZMQ$Poller. socket-count))
 
-(s/defn poll :- s/Int
+(s2/defn poll :- s2/Int
   "Returns the number of sockets available in the poller
 This is just a wrapper around the base handler.
 It feels dumb and more than a little pointless. Aside from the
@@ -541,10 +544,10 @@ For that matter, it seems like it would be better to just implement
 ISeq and return the next message as it becomes ready."
   ([poller :- common/Poller]
    (.poll poller))
-  ([poller :- common/Poller timeout :- s/Int]
+  ([poller :- common/Poller timeout :- s2/Int]
    (.poll poller timeout)))
 
-(s/defn ^:always-validate register-socket-in-poller!
+(s2/defn ^:always-validate register-socket-in-poller!
   "Register a socket to poll 'in'."
   ([socket :- common/Socket
     poller :- common/Poller]
@@ -552,7 +555,7 @@ ISeq and return the next message as it becomes ready."
      (io! (.register poller socket flag))))
   ([socket :- common/Socket
     poller :- common/Poller
-    flag :- s/Keyword
+    flag :- s2/Keyword
     & more-flags]
    ;; TODO: Verify that this does what I think with various flag keyword combinations
    (let [^Long actual-flags (K/flags->const (conj more-flags flag))]
@@ -560,7 +563,7 @@ ISeq and return the next message as it becomes ready."
      (throw (ex-info "Check this" {}))
      (io! (.register poller socket actual-flags)))))
 
-(s/defn unregister-socket-in-poller!
+(s2/defn unregister-socket-in-poller!
   [poller :- common/Poller
    socket :- common/Socket]
   (io! (.unregister poller socket)))
@@ -580,7 +583,7 @@ dealing with multiple sockets"
        (finally
          (cljeromq.core/unregister-socket-in-poller! ~socket pn#)))))
 
-(s/defn socket-poller-in!
+(s2/defn socket-poller-in!
   "Attach a new poller to a seq of sockets.
 Honestly, should be smarter and just let me poll on a single socket."
   [sockets :- [common/Socket]]
@@ -590,7 +593,7 @@ Honestly, should be smarter and just let me poll on a single socket."
       (register-socket-in-poller! s checker))
     checker))
 
-(s/defn in-available? :- s/Bool
+(s2/defn in-available? :- s2/Bool
   "Did the last poll trigger poller's POLLIN flag on socket n?
 
 Yes, this is the low-level interface aspect that I want to hide.
@@ -598,14 +601,14 @@ There are err and out versions that do the same thing.
 
 Currently, I only need this one."
   [poller :- common/Poller
-   n :- s/Int]
+   n :- s2/Int]
   (.pollin poller n))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Helpers of dubious value
 ;;; TODO: Move these elsewhere
 
-(s/defn ^:always-validate connection-string :- s/Str
+(s2/defn ^:always-validate connection-string :- s2/Str
   [url :- zmq-url]
   (let [base-address (:address url)
         address (if (number? (first base-address))
@@ -621,7 +624,7 @@ Currently, I only need this one."
         (str base ":" port)
         base))))
 
-(s/defn dump :- s/Str
+(s2/defn dump :- s2/Str
   "Log incoming messages"
   [socket :- common/Socket]
   (let [seperator (->> "-" repeat (take 38) (apply str))
@@ -635,9 +638,9 @@ Currently, I only need this one."
                        (recv-all! socket 0))]
     (string/join \newline (concat [seperator] formatted))))
 
-(s/defn set-id!
+(s2/defn set-id!
   ([socket :- common/Socket
-    n :- s/Int]
+    n :- s2/Int]
     (let [rdn (Random. (System/currentTimeMillis))]
       (identify! socket (str (.nextLong rdn) "-" (.nextLong rdn) n))))
   ([socket :- common/Socket]

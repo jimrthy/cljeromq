@@ -6,7 +6,7 @@
             ZMQ$Socket]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Schema
+;;; Specs
 
 (def byte-array-type (Class/forName "[B"))
 (s/def ::byte-array-type #(instance? byte-array-type %))
@@ -26,8 +26,15 @@
 
 ;;; Aliases to avoid the ugly java-style nested class names
 (def Context ZMQ$Context)
-(s/def ::Context #(instance? ZMQ$Context %))
+;;; FIXME: Use s/keys and :req/un || :opt-un instead
+(s/def ::context #(instance? ZMQ$Context %))
 (def Poller ZMQ$Poller)
-(s/def ::Poller #(instance? ZMQ$Poller %))
+(s/def ::poller #(instance? ZMQ$Poller %))
 (def Socket ZMQ$Socket)
-(s/def ::Socket #(instance? ZMQ$Socket %))
+(s/def ::socket #(instance? ZMQ$Socket %))
+
+(s/def ::socket-type #{:push :pull
+                       :req :rep
+                       :pair
+                       :pub :sub
+                       :router :dealer})
