@@ -4,7 +4,7 @@
   ;; Q: Can I switch this to EPL?
   :license {:name "Lesser General Public License"
             :url "http://www.gnu.org/licenses/lgpl.html"}
-  :dependencies [[org.clojure/clojure "1.9.0-alpha10"]
+  :dependencies [[org.clojure/clojure "1.9.0-alpha11"]
                  ;; Note that this very specifically does not get the associated
                  ;; native library (i.e. the JNI layer)
                  ;; Using this version to just use latest local copy because
