@@ -33,8 +33,26 @@
 (def Socket ZMQ$Socket)
 (s/def ::socket #(instance? ZMQ$Socket %))
 
+(s/def ::direction #{:bind :connect})
 (s/def ::socket-type #{:push :pull
                        :req :rep
                        :pair
                        :pub :sub
                        :router :dealer})
+
+;; TODO: Look up the rest
+(s/def ::zmq-protocol #{:inproc :tcp})
+
+(s/def ::dotted-quad (s/tuple byte? byte? byte? byte?))
+(s/def ::hostname string?)  ;; Q: regex?
+;; TODO: ipv6 and actual URL
+(s/def ::zmq-address (s/or ::dotted-quad ::hostname))
+(s/def ::port (s/and (int? #(<= 0 %) #(< % 65536))))
+
+(s/def ::zmq-url (s/keys :req [::zmq-protocol ::zmq-address]
+                         :opt [::port]))
+
+(s/def ::internal-pair-lhs ::socket)
+(s/def ::internal-pair-rhs ::socket)
+
+(s/def ::internal-pair (s/keys :req [::internal-pair-lhs ::internal-pair-rhs ::zmq-url]))

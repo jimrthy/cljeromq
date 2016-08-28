@@ -23,6 +23,7 @@ to make swapping back and forth seamless."
   (:require [cljeromq.common :as common :refer (byte-array-type)]
             [cljeromq.constants :as K]
             [clojure.edn :as edn]
+            [clojure.spec :as s]
             [clojure.string :as string]
             [schema.core :as s2])
   (:import [java.net InetAddress]
@@ -39,7 +40,6 @@ to make swapping back and forth seamless."
 ;;; TODO: Move these elsewhere.
 ;;; They're slightly more generally useful than the bulk
 ;;; of the actual code.
-
 (def InternalPair
   "Pair of inproc sockets
 
@@ -59,21 +59,25 @@ I don't like these names. But I really have to pick *something*"
            :pair))
 
 (def zmq-protocol
-  ;; TODO: Look up the rest
+  "Obsolete: switch to the spec defined in common instead"
   (s2/enum :tcp :inproc))
 
-(def zmq-address (s2/either
-                  [s2/Int]  ; 4 bytes
-                  ;; hostname
-                  s2/Str
-                  ;; ??? for IPv6
-                  ))
+(def zmq-address
+  "Obsolete: switch to the spec defined in common instead"
+  (s2/either
+   [s2/Int]  ; 4 bytes
+   ;; hostname
+   s2/Str
+   ;; ??? for IPv6
+   ))
 
 
-(def zmq-url {:protocol zmq-protocol
-              :address zmq-address
-              ;; TODO: Actually, this is a short
-              (s2/optional-key :port) s2/Int})
+(def zmq-url
+  "Obsolete: switch to the spec defined in common instead"
+  {:protocol zmq-protocol
+   :address zmq-address
+   ;; TODO: Actually, this is a short
+   (s2/optional-key :port) s2/Int})
 
 (defmulti send! (fn [socket message flags]
                   (class message)))
