@@ -10,7 +10,7 @@
             [clojure.tools.namespace.repl :refer (refresh refresh-all)]
             #_[com.stuartsierra.component :as component]
             [schema.core :as s])
-  (:import [[org.zeromq ZMQ]]))
+  (:import [org.zeromq ZMQ]))
 
 (comment
   (def system nil)

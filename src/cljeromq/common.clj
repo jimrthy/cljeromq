@@ -43,11 +43,12 @@
 ;; TODO: Look up the rest
 (s/def ::zmq-protocol #{:inproc :tcp})
 
-(s/def ::dotted-quad (s/tuple byte? byte? byte? byte?))
+(s/def ::byte (s/and int? #(<= 0%) #(< % 256)))
+(s/def ::dotted-quad (s/tuple ::byte ::byte ::byte ::byte))
 (s/def ::hostname string?)  ;; Q: regex?
 ;; TODO: ipv6 and actual URL
 (s/def ::zmq-address (s/or ::dotted-quad ::hostname))
-(s/def ::port (s/and (int? #(<= 0 %) #(< % 65536))))
+(s/def ::port (s/and int? #(<= 0 %) #(< % 65536)))
 
 (s/def ::zmq-url (s/keys :req [::zmq-protocol ::zmq-address]
                          :opt [::port]))
