@@ -11,11 +11,7 @@
                  ;; I don't want to try to cope with getting 3.1.0
                  ;; installed and working (it won't build on recent versions
                  ;; of Debian/Ubuntu)
-                 [org.zeromq/jzmq "3.1.1-SNAPSHOT"]
-                 ;; If I'm serious about converting to clojure 1.9,
-                 ;; this dependency really must go away.
-                 ;; Q: Is there any other good reason for not using 1.6 as baseline?
-                 [prismatic/schema "1.1.2"]]
+                 [org.zeromq/jzmq "3.1.1-SNAPSHOT"]]
   ;; Because java isn't bright enough to find this without help.
   :jvm-opts [~(str "-Djava.library.path=/usr/local/lib:" (System/getenv "LD_LIBRARY_PATH"))]
   :plugins []

@@ -181,6 +181,8 @@
                   (comment) (is (= (str msg i "\n") (String. #_(mq/recv! puller) (.recv puller 0))))))
               (testing "Push thread exited"
                 (println "Waiting on Encrypted Push thread to exit")
+                ;; TODO: Get rid of the magic number
+                (Thread/sleep 10)
                 (is (realized? push-thread))
                 (println "Encrypted Push thread exited"))
               (finally (comment (mq/disconnect! puller url))

@@ -50,6 +50,8 @@
 (s/def ::zmq-address (s/or ::dotted-quad ::hostname))
 (s/def ::port (s/and int? #(<= 0 %) #(< % 65536)))
 
+;; TODO: In recent (pending?) versions, can also specify a resource identifier
+;; I think the point's to bind multiple sockets to the same port
 (s/def ::zmq-url (s/keys :req [::zmq-protocol ::zmq-address]
                          :opt [::port]))
 

@@ -1,13 +1,23 @@
 (ns cljeromq.constants
-  (:require [schema.core :as s])
+  (:require [clojure.spec :as s])
   ;; This dependency's annoying, but the alternative
   ;; is to just copy/paste its named constants.
   (:import [org.zeromq ZMQ ZMQ$Poller]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Schema
+;;; Specs
+(s/def ::korks (s/or :single keyword? :multiple (s/coll-of keyword?)))
 
-(def keyword-or-seq (s/either s/Keyword [s/Keyword]))
+(s/def ::major integer?)
+(s/def ::minor integer?)
+(s/def ::patch integer?)
+(s/def ::version-map (s/keys :req [::major ::minor ::patch]))
+
+;; Maintaining this seems like a thankless job.
+;; TODO: Come up with a way to automate it.
+(s/def ::control-keyword-initial #{:no-block, :dont-wait, :wait,
+                                   :sndmore, :send-more,
+                                   :poll-in, :poll-out, :poll-err})
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Gory details
@@ -110,21 +120,39 @@ Although, really, that's almost pedantic."
    :flag
    {:edn "clojure/edn"}})
 
+(s/def ::control-keyword (-> const :control keys set))
+(s/def ::error-keyword (-> const :error keys set))
+(s/def ::poller-flags (-> const :polling keys set))
+(s/def ::socket-options (-> const :socket-options keys set))
+(s/def ::socket-types (-> const :socket-type keys set))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Public
 
-(s/defn control->const :- s/Int
+(s/fdef control->const
+        :args (s/cat :key ::control-keyword)
+        ;; Note that this really returns a value representing a bit flag
+        :ret integer?)
+(defn control->const
   "Convert a control keyword to a ZMQ constant"
-  [key :- s/Keyword]
+  [key]
   (comment (println "Extracting " key))
   ((const :control) key))
 
-(s/defn error->const :- s/Int
-  [which :- s/Keyword]
+(s/fdef error->const
+        :args (s/cat :which ::error-keyword)
+        :ret integer?)
+(defn error->const
+  [which]
   ((:error const) which))
 
-(s/defn flags->const :- s/Int
-  [flags :- keyword-or-seq]
+(s/fdef flags->const
+        ;; This is really ::korks where each keyword is a control key.
+        ;; TODO: Spec that out
+        :args (s/cat :flags ::korks)
+        :ret integer?)
+(defn flags->const
+  [flags]
   "Use in conjunction with control-const to convert a series
 of/individual keyword into a logical-or'd flag to control
 socket options."
@@ -135,16 +163,25 @@ socket options."
         (control->const flags))
       0))
 
-(s/defn sock->const :- s/Int
+(s/fdef sock->const
+        :args (s/cat :key ::socket-types)
+        :ret integer?)
+(defn sock->const
   "Convert a socket keyword to a ZMQ constant"
-  [key :- s/Keyword]
+  [key]
   ((const :socket-type) key))
 
+(s/fdef option->const
+        :args (s/cat :key ::socket-options))
 (defn option->const
   "Convert a keyword naming a socket option to a ZMQ constant"
   [key]
   (-> :socket-options const key))
 
+(s/fdef poll-opts
+        ;; This is another that's really a composite of specific keyword types
+        :args (s/cat :korks ::korks)
+        :ret integer?)
 (defn poll-opts
   [korks]
   (if (keyword? korks)
@@ -157,12 +194,12 @@ socket options."
             (poll-opts (rest korks)))
         base))))
 
-(s/defn version :- {:major s/Int
-                    :minor s/Int
-                    :patch s/Int}
+(s/fdef version
+        :ret ::version-map)
+(defn version
   "Return the 0mq version number as a vector"
   []
   (let [major (ZMQ/getMajorVersion)
         minor (ZMQ/getMinorVersion)
         patch (ZMQ/getPatchVersion)]
-    {:major major :minor minor :patch patch}))
+    {::major major ::minor minor ::patch patch}))
