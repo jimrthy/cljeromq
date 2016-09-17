@@ -48,7 +48,7 @@
 (s/def ::hostname string?)  ;; Q: regex?
 ;; TODO: ipv6 and actual URL
 (s/def ::zmq-address (s/or ::dotted-quad ::hostname))
-(s/def ::port (s/and int? #(<= 0 %) #(< % 65536)))
+(s/def ::port (s/and int? (complement neg?) #(< % 65536)))
 
 ;; TODO: In recent (pending?) versions, can also specify a resource identifier
 ;; I think the point's to bind multiple sockets to the same port

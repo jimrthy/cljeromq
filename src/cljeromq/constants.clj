@@ -24,7 +24,9 @@
 
 (def const
   "TODO: This should be a function instead of a var.
-Although, really, that's almost pedantic."
+Although, really, that's almost pedantic.
+
+Q: Is it worth the effort to namespace these?"
   {:context-option {
                     :threads 1  ; default: 1
                     :max-sockets 2  ; default: 1024
