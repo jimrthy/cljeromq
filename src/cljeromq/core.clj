@@ -710,9 +710,10 @@ Currently, I only need this one."
 (s/fdef connection-string
         :args (s/cat :url :cljeromq.common/zmq-url)
         :ret string?)
-;; TODO: ^:always-validate
 (defn connection-string
   [url]
+  {:pre [(valid? :cljeromq.common/zmq-url url)]
+   :post [(string? %)]}
   (let [base-address (:address url)
         address (if (number? (first base-address))
                   (InetAddress/getByAddress (byte-array base-address))
