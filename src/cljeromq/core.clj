@@ -712,7 +712,7 @@ Currently, I only need this one."
         :ret string?)
 (defn connection-string
   [url]
-  {:pre [(valid? :cljeromq.common/zmq-url url)]
+  {:pre [(s/valid? :cljeromq.common/zmq-url url)]
    :post [(string? %)]}
   (let [base-address (:address url)
         address (if (number? (first base-address))
