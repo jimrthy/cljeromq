@@ -45,9 +45,11 @@
 
 (s/def ::byte (s/and int? #(<= 0%) #(< % 256)))
 (s/def ::dotted-quad (s/tuple ::byte ::byte ::byte ::byte))
-(s/def ::hostname string?)  ;; Q: regex?
-;; TODO: ipv6 and actual URL
-(s/def ::zmq-address (s/or ::dotted-quad ::hostname))
+(s/def ::hostname string?)  ;; Q: regex? (or something along those lines)
+;; TODO: ipv6
+(s/def ::zmq-address (s/or :dotted-quad ::dotted-quad
+                           :hostname ::hostname
+                           :database-name string?))
 (s/def ::port (s/and int? (complement neg?) #(< % 65536)))
 
 ;; TODO: In recent (pending?) versions, can also specify a resource identifier
