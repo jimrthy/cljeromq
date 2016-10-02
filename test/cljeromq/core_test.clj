@@ -42,7 +42,8 @@
 ;; can validate that approach
 (deftest test-jni
   (testing "Basic req/rep inproc handshake test"
-        (let [uri "inproc://a-test-1"
+    (let [uri #:cljeromq.common {:zmq-protocol :inproc
+                                 :zmq-address "a-test-1"}
               [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
           (try
             (let [client (future (.send req "HELO")
@@ -59,7 +60,9 @@
                          :uri uri
                          :unbind-server? false})))))
   (testing "Basic req/rep TCP handshake test"
-        (let [uri "tcp://127.0.0.1:8709"
+    (let [uri #:cljeromq.common{:zmq-protocol :tcp
+                                :zmq-address "127.0.0.1:"
+                                :port 8709}
               [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
           (try
             (let [client (future (.send req "HELO")
@@ -80,7 +83,9 @@
 
 (defn req-rep-wrapper
   [msg]
- (let [uri "tcp://127.0.0.1:10101"
+  (let [uri #:cljeromq.common{:zmq-protocol :tcp
+                              :zmq-address "127.0.0.1"
+                              :port 10101}
        [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
    (try
      (try
@@ -137,7 +142,9 @@
              (println "Receiver: " receiver)
 
              ;; TODO: Don't hard-code this port number
-             (let [url  "tcp://127.0.0.1:10102"]
+             (let [url #:cljeromq.common{:zmq-protocol :tcp
+                                         :zmq-address "127.0.0.1:"
+                                         :port 10102}]
                (println "Binding receiver")
                (mq/bind! receiver url)
                (println "Setting up sender")
@@ -162,7 +169,8 @@
 
 (deftest req-rep-inproc-unencrypted-handshake
   (testing "Basic inproc req/rep handshake test"
-    (let [uri "inproc://a-test-1"
+    (let [uri #:cljeromq.common{:zmq-protocol :inproc
+                                :zmq-address "a-test-2"}
           ctx (ZMQ/context 1)]
       (println "Checking req/rep unencrypted inproc")
       (try
@@ -196,7 +204,8 @@ to req-rep-inproc-unencrypted-handshake above
 
 TODO: Make sure they work the same"
   []
-  (let [uri "inproc://a-test-1"
+  (let [uri #:cljeromq.common{:zmq-protocol :inproc
+                              :zmq-address "a-test-3"}
         [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
     (try
       (let [client (future (.send req "HELO")
@@ -223,7 +232,9 @@ TODO: Make sure they work the same"
 
 (deftest simplest-tcp-test
   (testing "TCP REP/REQ handshake"
-    (let [uri "tcp://127.0.0.1:8592"
+    (let [uri #:cljeromq.common {:zmq-protocol :tcp
+                                 :zmq-address "127.0.0.1:"
+                                 :port 8592}
           ctx (ZMQ/context 1)]
       (println "Basic rep/req unencrypted TCP test")
       (try
@@ -259,7 +270,9 @@ directly above
 
 TODO: Verify it"
   []
-  (let [uri "tcp://127.0.0.1:8709"
+  (let [uri #:cljeromq.common {:zmq-protocol :tcp
+                               :zmq-address "127.0.0.1:"
+                               :port 8709}
         [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
     (try
       (let [client (future (.send req "HELO")

@@ -20,11 +20,14 @@
 
 Should probably update the API to keep it compatible w/ cljzmq
 to make swapping back and forth seamless."
-  (:require [cljeromq.common :as common :refer (byte-array-type)]
-            [cljeromq.constants :as K]
-            [clojure.edn :as edn]
-            [clojure.spec :as s]
-            [clojure.string :as string])
+  (:require [cljeromq
+             [common :as common :refer (byte-array-type)]
+             [constants :as K]]
+            [clojure
+             [edn :as edn]
+             [pprint :refer (pprint)]
+             [spec :as s]
+             [string :as string]])
   (:import [java.net InetAddress]
            [java.nio ByteBuffer]
            [java.util Random]
@@ -721,12 +724,19 @@ Currently, I only need this one."
     ;; TODO: This approach is overly simplistic.
     ;; It seems like it's guaranteed to break on inproc,
     ;; as a are minimum.
-    (let [base (str (name (:protocol url))
-                    "://"
-                    (.getHostAddress address))]
-      (if-let [port (:port url)]
-        (str base ":" port)
-        base))))
+
+    (if-let [protocol (:cljeromq.common/zmq-protocol url)]
+      (let [base (str (name protocol)
+                      "://"
+                      (.getHostAddress address))]
+        (if-let [port (:cljeromq.common/port url)]
+          (str base ":" port)
+          base))
+      (do
+        (println "Missing protocol specification in\n"
+                 (with-out-str (pprint url)))
+        (throw (ex-info "Missing protocol specification"
+                        {:problem url}))))))
 
 (s/fdef dump
         :args (s/cat :socket :cljeromq.common/socket)
