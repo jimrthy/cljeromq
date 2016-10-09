@@ -1,6 +1,9 @@
 (ns cljeromq.common
-  (:require [clojure.spec :as s])
+  (:require [cljeromq.constants :as K]
+   [clojure.spec :as s]
+            [clojure.spec.gen :as gen])
   (:import [org.zeromq
+            ZMQ
             ZMQ$Context
             ZMQ$Poller
             ZMQ$Socket]))
@@ -30,8 +33,6 @@
 (s/def ::context #(instance? ZMQ$Context %))
 (def Poller ZMQ$Poller)
 (s/def ::poller #(instance? ZMQ$Poller %))
-(def Socket ZMQ$Socket)
-(s/def ::socket #(instance? ZMQ$Socket %))
 
 (s/def ::direction #{:bind :connect})
 (s/def ::socket-type #{:push :pull
@@ -39,6 +40,19 @@
                        :pair
                        :pub :sub
                        :router :dealer})
+(def Socket ZMQ$Socket)
+(def socket-descriptions #{})
+(defn- socket-creator
+  [kind]
+  (let [ctx (ZMQ/context 2)
+        actual (K/sock->const kind)]
+    (.socket ctx actual)))
+(def gen-socket (gen/fmap socket-creator (s/gen ::socket-type)))
+;; Honestly, I need specs for both bound and connected sockets as well.
+(s/def ::socket
+  (s/spec
+    #(instance? ZMQ$Socket %)
+    :gen gen-socket))
 
 ;; TODO: Look up the rest
 (s/def ::zmq-protocol #{:inproc :tcp})

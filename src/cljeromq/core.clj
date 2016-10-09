@@ -43,11 +43,13 @@ to make swapping back and forth seamless."
 ;;; They're slightly more generally useful than the bulk
 ;;; of the actual code.
 
+;; This should really be a :common/zmq-url instead
+;; Except that...sooner or later we really do have to switch to
+;; the raw thing. (Of course, it should be as late as possible)
+(s/def ::url string?)
+
 ;; I don't like these names. But I really have to pick *something*
 (s/def ::internal-pair (s/keys :req [::lhs ::rhs ::url]))
-
-;; TODO: This should really be a :common/zmq-url instead
-(s/def ::url string?)
 
 (s/fdef send!
         :args (s/cat :socket :cljeromq.common/socket
