@@ -1,4 +1,7 @@
 (ns cljeromq.core-test
+  "This is almost a poster child for the value of generative testing.
+
+TODO: Convert to doing that."
   (:import [org.zeromq
             ZMQ
             ZMQException])

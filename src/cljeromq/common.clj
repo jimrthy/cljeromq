@@ -43,11 +43,25 @@
 (def Socket ZMQ$Socket)
 (def socket-descriptions #{})
 (defn- socket-creator
-  [kind]
-  (let [ctx (ZMQ/context 2)
-        actual (K/sock->const kind)]
-    (.socket ctx actual)))
-(def gen-socket (gen/fmap socket-creator (s/gen ::socket-type)))
+  [nested-generator]
+  ;; nested-generator is a clojure.test.check.generators.Generator
+  ;; Which means that it has a :gen member
+  (println "Trying to generate based on"
+           nested-generator
+           "a" (class nested-generator))
+  (let [kind
+        ;; Can't call this directly
+        #_(nested-generator)
+        ;; Can't use gen to call it
+        #_(s/gen nested-generator)
+        ;; This fails because I have to supply args
+        #_((:gen nested-generator))
+        (throw (ex-info "Well, what should I do?" {}))]
+    (comment) (println "Generating a" kind "socket")
+    (let [ctx (ZMQ/context 2)
+          actual (K/sock->const kind)]
+      (.socket ctx actual))))
+(def gen-socket (partial socket-creator (s/gen ::socket-type)))
 ;; Honestly, I need specs for both bound and connected sockets as well.
 (s/def ::socket
   (s/spec
