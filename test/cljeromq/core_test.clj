@@ -9,12 +9,19 @@
 (defn setup
   [uri client-type server-type]
   (let [ctx (ZMQ/context 2)]
-    (let [client (.socket ctx client-type)]
-      ;; TODO: Switch to using a random port instead
-      (.connect client uri)
-      (let [server (.socket ctx server-type)]
-        (.bind server uri)
-        [ctx client server]))))
+    (try
+      (let [client (.socket ctx client-type)]
+        (println "Client socket created. Trying to connect to" uri)
+        ;; TODO: Switch to using a random port instead
+        (.connect client uri)
+        (let [server (.socket ctx server-type)]
+          (.bind server uri)
+          [ctx client server]))
+      (catch java.lang.ClassCastException ex
+        (print (str ex) "\ntrying to set up sockets for"
+               client-type "(client) and"
+               server-type "(server)")
+        (throw ex)))))
 
 (defn teardown
   ([{:keys [context client server uri unbind-server?]}]
@@ -42,51 +49,46 @@
 ;; can validate that approach
 (deftest test-jni
   (testing "Basic req/rep inproc handshake test"
-    (let [uri #:cljeromq.common {:zmq-protocol :inproc
-                                 :zmq-address "a-test-1"}
-              [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
-          (try
-            (let [client (future (.send req "HELO")
-                                 (String. (.recv req)))]
-              (let [greet (.recv rep)]
-                (is (= "HELO" (String. greet))))
-              (.send rep "kthxbye")
-              (is (= "kthxbye" @client)))
-            (finally
-              (.unbind rep uri)
-              (teardown {:context ctx
-                         :client req
-                         :server rep
-                         :uri uri
-                         :unbind-server? false})))))
+    (let [uri "inproc://a-test-1"
+          [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
+      (try
+        (let [client (future (.send req "HELO")
+                             (String. (.recv req)))]
+          (let [greet (.recv rep)]
+            (is (= "HELO" (String. greet))))
+          (.send rep "kthxbye")
+          (is (= "kthxbye" @client)))
+        (finally
+          (.unbind rep uri)
+          (teardown {:context ctx
+                     :client req
+                     :server rep
+                     :uri uri
+                     :unbind-server? false})))))
   (testing "Basic req/rep TCP handshake test"
-    (let [uri #:cljeromq.common{:zmq-protocol :tcp
-                                :zmq-address "127.0.0.1:"
-                                :port 8709}
-              [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
-          (try
-            (let [client (future (.send req "HELO")
-                                 (println "HELO sent from client. Waiting on response from server")
-                                 (let [client-result (String. (.recv req))]
-                                   (println "Server response to handshake received")
-                                   client-result))]
-              (let [greet (.recv rep)]
-                (println "Server received greeting from client")
-                (is (= "HELO" (String. greet))))
-              (println "Sending response from server to client")
-              (let [response "kthxbye"]
-                (.send rep response)
-                (println "Verifying that client received the response we sent")
-                (is (= response @client))))
-            (finally
-              (teardown ctx req rep uri))))))
+    (let [uri "tcp://127.0.0.1:8709"
+          [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
+      (try
+        (let [client (future (.send req "HELO")
+                             (println "HELO sent from client. Waiting on response from server")
+                             (let [client-result (String. (.recv req))]
+                               (println "Server response to handshake received")
+                               client-result))]
+          (let [greet (.recv rep)]
+            (println "Server received greeting from client")
+            (is (= "HELO" (String. greet))))
+          (println "Sending response from server to client")
+          (let [response "kthxbye"]
+            (.send rep response)
+            (println "Verifying that client received the response we sent")
+            (is (= response @client))))
+        (finally
+          (teardown ctx req rep uri))))))
 
 (defn req-rep-wrapper
   [msg]
-  (let [uri #:cljeromq.common{:zmq-protocol :tcp
-                              :zmq-address "127.0.0.1"
-                              :port 10101}
-       [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
+  (let [uri "tcp://127.0.0.1:10101"
+        [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
    (try
      (try
        (mq/send! req msg 0)
@@ -142,9 +144,9 @@
              (println "Receiver: " receiver)
 
              ;; TODO: Don't hard-code this port number
-             (let [url #:cljeromq.common{:zmq-protocol :tcp
-                                         :zmq-address "127.0.0.1:"
-                                         :port 10102}]
+             (let [url  #:cljeromq.common{:zmq-protocol :tcp
+                                          :zmq-address "127.0.0.1"
+                                          :port 10102}]
                (println "Binding receiver")
                (mq/bind! receiver url)
                (println "Setting up sender")
@@ -169,8 +171,7 @@
 
 (deftest req-rep-inproc-unencrypted-handshake
   (testing "Basic inproc req/rep handshake test"
-    (let [uri #:cljeromq.common{:zmq-protocol :inproc
-                                :zmq-address "a-test-2"}
+    (let [uri "inproc://a-test-2"
           ctx (ZMQ/context 1)]
       (println "Checking req/rep unencrypted inproc")
       (try
@@ -204,8 +205,7 @@ to req-rep-inproc-unencrypted-handshake above
 
 TODO: Make sure they work the same"
   []
-  (let [uri #:cljeromq.common{:zmq-protocol :inproc
-                              :zmq-address "a-test-3"}
+  (let [uri "inproc://a-test-3"
         [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
     (try
       (let [client (future (.send req "HELO")
@@ -232,9 +232,7 @@ TODO: Make sure they work the same"
 
 (deftest simplest-tcp-test
   (testing "TCP REP/REQ handshake"
-    (let [uri #:cljeromq.common {:zmq-protocol :tcp
-                                 :zmq-address "127.0.0.1:"
-                                 :port 8592}
+    (let [uri "tcp://127.0.0.1:8592"
           ctx (ZMQ/context 1)]
       (println "Basic rep/req unencrypted TCP test")
       (try
@@ -270,9 +268,7 @@ directly above
 
 TODO: Verify it"
   []
-  (let [uri #:cljeromq.common {:zmq-protocol :tcp
-                               :zmq-address "127.0.0.1:"
-                               :port 8709}
+  (let [uri "tcp://127.0.0.1:8709"
         [ctx req rep] (setup uri ZMQ/REQ ZMQ/REP)]
     (try
       (let [client (future (.send req "HELO")
@@ -292,9 +288,9 @@ TODO: Verify it"
     (is (= (class bs) common/byte-array-type))))
 
 (deftest url-basics []
-  (let [url {:protocol :tcp
-             :address [0 0 0 0]
-             :port 7681}]
+  (let [url #:cljeromq.common{:zmq-protocol :tcp
+                              :zmq-address [0 0 0 0]
+                              :port 7681}]
     (is (= "tcp://0.0.0.0:7681"
            (mq/connection-string url)))))
 

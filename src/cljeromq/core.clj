@@ -183,6 +183,19 @@ Desperately needs documentation"
      (try ~@body
           (finally (close! ~name)))))
 
+;; TODO: Move this (and probably the other helpers)
+;; somewhere more useful
+(declare connection-string)
+(s/fdef ensure-connection-string
+        :args (s/or :string string?
+                    :map ::url)
+        :ret ::url)
+(defn ensure-connection-string
+  [uri]
+  (if (string? uri)
+    uri
+    (connection-string uri)))
+
 (s/fdef bind!
         :args (s/cat :socket :cljeromq.common/socket
                      :url ::url))
@@ -193,12 +206,13 @@ Any given machine can only have one socket bound to one endpoint at any given ti
 It might be helpful (though ultimately misleading) to think of this call as setting
 up the server side of an interaction."
   [socket url]
-  (try
-    (io! (.bind socket url))
-    (catch ZMQException ex
-      (throw (ex-info "Binding Failed"
-                      {:url url}
-                      ex)))))
+  (let [url (ensure-connection-string url)]
+    (try
+      (io! (.bind socket url))
+      (catch ZMQException ex
+        (throw (ex-info "Binding Failed"
+                        {:url url}
+                        ex))))))
 
 (s/fdef bind-random-port!
         :args (s/cat :socket :cljeromq.common/socket
@@ -281,7 +295,8 @@ Returns the port number"
         :ret :cljeromq.common/socket)
 (defn connect!
   [socket url]
-  (io! (.connect socket url))
+  (let [real-url (ensure-connection-string url)]
+    (io! (.connect socket real-url)))
   socket)
 
 (s/fdef disconnect!
@@ -719,7 +734,7 @@ Currently, I only need this one."
   [url]
   {:pre [(s/valid? :cljeromq.common/zmq-url url)]
    :post [(string? %)]}
-  (let [base-address (:address url)
+  (let [base-address (:cljeromq.common/zmq-address url)
         address (if (number? (first base-address))
                   (InetAddress/getByAddress (byte-array base-address))
                   (InetAddress/getByName base-address))]
