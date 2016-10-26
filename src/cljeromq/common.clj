@@ -46,9 +46,10 @@
   [nested-generator]
   ;; nested-generator is a clojure.test.check.generators.Generator
   ;; Which means that it has a :gen member
-  (println "Trying to generate based on"
+  (println "Trying to generate a Socket based on"
            nested-generator
            "a" (class nested-generator))
+  (throw (ex-info "How did I get here?" {}))
   (let [kind
         ;; Can't call this directly
         #_(nested-generator)
