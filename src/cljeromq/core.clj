@@ -734,26 +734,29 @@ Currently, I only need this one."
   [url]
   {:pre [(s/valid? :cljeromq.common/zmq-url url)]
    :post [(string? %)]}
-  (let [base-address (:cljeromq.common/zmq-address url)
-        address (if (number? (first base-address))
-                  (InetAddress/getByAddress (byte-array base-address))
-                  (InetAddress/getByName base-address))]
-    ;; TODO: This approach is overly simplistic.
-    ;; It seems like it's guaranteed to break on inproc,
-    ;; as a are minimum.
-
-    (if-let [protocol (:cljeromq.common/zmq-protocol url)]
+  (if-let [protocol (:cljeromq.common/zmq-protocol url)]
+    (let [base-address (:cljeromq.common/zmq-address url)
+          address
+          (if (#{:tcp} protocol)
+            (let [address (if (number? (first base-address))
+                            (InetAddress/getByAddress (byte-array base-address))
+                            (InetAddress/getByName base-address))]
+              (.getHostAddress address))
+            ;; For now, assume that non-tcp means inproc.
+            ;; It isn't a justifiable assumption, except that those happen
+            ;; to be the two I actually use
+            base-address)]
       (let [base (str (name protocol)
                       "://"
-                      (.getHostAddress address))]
+                      address)]
         (if-let [port (:cljeromq.common/port url)]
           (str base ":" port)
-          base))
-      (do
-        (println "Missing protocol specification in\n"
-                 (with-out-str (pprint url)))
-        (throw (ex-info "Missing protocol specification"
-                        {:problem url}))))))
+          base)))
+    (do
+      (println "Missing protocol specification in\n"
+               (with-out-str (pprint url)))
+      (throw (ex-info "Missing protocol specification"
+                      {:problem url})))))
 
 (s/fdef dump
         :args (s/cat :socket :cljeromq.common/socket)
