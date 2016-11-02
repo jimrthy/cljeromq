@@ -1,6 +1,6 @@
 (ns cljeromq.common
   (:require [cljeromq.constants :as K]
-   [clojure.spec :as s]
+            [clojure.spec :as s]
             [clojure.spec.gen :as gen])
   (:import [org.zeromq
             ZMQ
@@ -42,32 +42,61 @@
                        :router :dealer})
 (def Socket ZMQ$Socket)
 (def socket-descriptions #{})
-(defn- socket-creator
-  [nested-generator]
-  ;; nested-generator is a clojure.test.check.generators.Generator
-  ;; Which means that it has a :gen member
-  (println "Trying to generate a Socket based on"
-           nested-generator
-           "a" (class nested-generator))
-  (throw (ex-info "How did I get here?" {}))
-  (let [kind
-        ;; Can't call this directly
-        #_(nested-generator)
-        ;; Can't use gen to call it
-        #_(s/gen nested-generator)
-        ;; This fails because I have to supply args
-        #_((:gen nested-generator))
-        (throw (ex-info "Well, what should I do?" {}))]
-    (comment) (println "Generating a" kind "socket")
-    (let [ctx (ZMQ/context 2)
-          actual (K/sock->const kind)]
-      (.socket ctx actual))))
-(def gen-socket (partial socket-creator (s/gen ::socket-type)))
 ;; Honestly, I need specs for both bound and connected sockets as well.
-(s/def ::socket
-  (s/spec
-    #(instance? ZMQ$Socket %)
-    :gen gen-socket))
+(s/def ::socket #(instance? ZMQ$Socket %))
+
+;; But start w/ this
+(defprotocol IBindingSocket
+  "Things with known addresses, like servers, generally do this"
+  (bind [this url] "Generally requires exclusive access to a socket"))
+(defprotocol IConnectingSocket
+  "The other have of a connection that talks to the IBindingSocket.
+  Generally considered the client"
+  (connect [this url]))
+(defprotocol IReadable
+  "A socket you can read"
+  ;; TODO: Need to exclude clojure.core/read to avoid compiler warning
+  (read [this] "Returns a byte-array that was written from the other socket"))
+(defprotocol IWriteable
+  (write [this array-of-bytes] "Sends array-of-bytes to the other socket"))
+(extend ZMQ$Socket
+  IBindingSocket {}
+  IConnectingSocket {}
+  IReadable {}
+  IWriteable {})
+
+(comment
+  (defn- socket-creator
+    [nested-generator]
+    ;; nested-generator is a clojure.test.check.generators.Generator
+    ;; Which means that it has a :gen member
+    (println "Trying to generate a Socket based on"
+             nested-generator
+             "a" (class nested-generator))
+    (throw (ex-info "How did I get here?" {}))
+    (let [kind
+          ;; Can't call this directly
+          #_(nested-generator)
+          ;; Can't use gen to call it
+          #_(s/gen nested-generator)
+          ;; This fails because I have to supply args
+          #_((:gen nested-generator))
+          (throw (ex-info "Well, what should I do?" {}))]
+      (comment) (println "Generating a" kind "socket")
+      (let [ctx (ZMQ/context 2)
+            actual (K/sock->const kind)]
+        (.socket ctx actual))))
+  (def gen-socket (partial socket-creator (s/gen ::socket-type))))
+
+;; OK, how are these really supposed to work?
+(def gen-readable-socket (throw (RuntimeException. "Not Implemented")))
+(s/def ::testable-read-socket
+  (s/spec #(instance? IReadable %)
+          :gen gen-readable-socket))
+(def gen-writeable-socket (throw (RuntimeException. "Not Implemented")))
+(s/def ::testable-write-socket
+  (s/spec #(instance? IWriteable %)
+          :gen gen-writeable-socket))
 
 ;; TODO: Look up the rest
 (s/def ::zmq-protocol #{:inproc :tcp})
