@@ -217,8 +217,8 @@ up the server side of an interaction."
 (s/fdef bind-random-port!
         :args (s/cat :socket :cljeromq.common/socket
                      :endpoint ::url
-                     :min :cljeromq.common/port
-                     :max :cljeromq.common/port)
+                     :min :common/port
+                     :max :common/port)
         :ret :cljeromq.common/port)
 (defn bind-random-port!
   "Binds to the first free port. Endpoint should be of the form

@@ -1,4 +1,5 @@
 (ns cljeromq.common
+  (:refer-clojure :exclude [read])
   (:require [cljeromq.constants :as K]
             [clojure.spec :as s]
             [clojure.spec.gen :as gen])
@@ -59,6 +60,9 @@
   (read [this] "Returns a byte-array that was written from the other socket"))
 (defprotocol IWriteable
   (write [this array-of-bytes] "Sends array-of-bytes to the other socket"))
+;;; This really defines all those protocols/interfaces. By implementing them.
+;;; Retrofitting isn't ideal, but I have my doubts about getting alternatives
+;;; accepted
 (extend ZMQ$Socket
   IBindingSocket {}
   IConnectingSocket {}
@@ -89,11 +93,44 @@
   (def gen-socket (partial socket-creator (s/gen ::socket-type))))
 
 ;; OK, how are these really supposed to work?
-(def gen-readable-socket (throw (RuntimeException. "Not Implemented")))
+(defn gen-readable-socket
+  []
+  (gen/return (reify
+                IReadable
+                (read [this]
+                  (println "Trying to read")
+                  (gen/generate (gen/bytes))))))
+(comment
+  ;; Just verifying that reify does what I think
+  (println (str (reify
+                  Object
+                  (toString [this]
+                    "blah")))))
 (s/def ::testable-read-socket
-  (s/spec #(instance? IReadable %)
+  (s/spec #_(instance? IReadable %)
+          (fn [x]
+            (println "Conforming " x "to verify that it's a IReadable? (spoiler: it's a" (class x) ")")
+            (try
+              (let [success (satisfies? IReadable x)]
+                (try
+                  (println "It was" (if success "" "not") "!")
+                  (catch ClassCastException ex
+                    (println "Failed trying to document result of instance?")))
+                (when success
+                  x))
+              (catch ClassCastException ex
+                (println "Failure trying to call instance?:" ex))))
           :gen gen-readable-socket))
-(def gen-writeable-socket (throw (RuntimeException. "Not Implemented")))
+(defn gen-writeable-socket
+  []
+  (gen/return (reify
+                IWriteable
+                (write
+                    [this array-of-bytes]
+                  ;; Seems like we should do something more than just swallowing the
+                  ;; input.
+                  ;; Q: What else could possibly make sense?
+                  nil))))
 (s/def ::testable-write-socket
   (s/spec #(instance? IWriteable %)
           :gen gen-writeable-socket))

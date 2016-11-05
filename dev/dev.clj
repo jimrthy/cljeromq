@@ -5,6 +5,7 @@
             [clojure.pprint :refer (pprint)]
             [clojure.repl :refer :all]
             [clojure.spec :as s]
+            [clojure.spec.gen :as gen]
             [clojure.string :as str]
             [clojure.test :as test]
             [clojure.tools.namespace.repl :refer (refresh refresh-all)])
