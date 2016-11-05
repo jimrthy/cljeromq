@@ -1,5 +1,5 @@
 (ns cljeromq.common
-  (:refer-clojure :exclude [read])
+  (:refer-clojure :exclude [send])
   (:require [cljeromq.constants :as K]
             [clojure.spec :as s]
             [clojure.spec.gen :as gen])
@@ -60,9 +60,9 @@
 (defprotocol IReadable
   "A socket you can read"
   ;; TODO: Need to exclude clojure.core/read to avoid compiler warning
-  (read [this] "Returns a byte-array that was written from the other socket"))
+  (recv [this] "Returns a byte-array that was written from the other socket"))
 (defprotocol IWriteable
-  (write [this array-of-bytes] "Sends array-of-bytes to the other socket"))
+  (send [this array-of-bytes] "Sends array-of-bytes to the other socket"))
 ;;; This really defines all those protocols/interfaces. By implementing them.
 ;;; Retrofitting isn't ideal, but I have my doubts about getting alternatives
 ;;; accepted
@@ -99,17 +99,18 @@
   []
   (gen/return (reify
                 IReadable
-                (read [this]
+                (recv [this]
                   ;; TODO: Switch to just using the byte-array-type generator?
                   (gen/generate (gen/bytes))))))
 (s/def ::testable-read-socket
   (s/spec #(satisfies? IReadable %)
           :gen gen-readable-socket))
+
 (defn gen-writeable-socket
   []
   (gen/return (reify
                 IWriteable
-                (write
+                (send
                     [this array-of-bytes]
                   ;; Seems like we should do something more than just swallowing the
                   ;; input.

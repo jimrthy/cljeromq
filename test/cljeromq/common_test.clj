@@ -18,7 +18,7 @@
           ;; Second is the conformed version.
           actual (-> generated first second)]
       (dotimes [_ 10]
-        (is (.read actual))))))
+        (is (.recv actual))))))
 (comment (read-socket-generation))
 
 (deftest write-socket-generation
@@ -28,7 +28,7 @@
   (testing "Can generate a mock Write socket that silently swallows gibberish on demand"
     (let [generated (gen/generate (s/gen :cljeromq.common/testable-write-socket))]
       (dotimes [_ 10]
-        (.write generated (gen/generate (gen/bytes)))))))
+        (.send generated (gen/generate (gen/bytes)))))))
 (comment (write-socket-generation))
 
 (deftest byte-array-gen
