@@ -12,10 +12,10 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Specs
 
-(def byte-array-type (Class/forName "[B"))
-(s/def ::byte-array-type
-  (s/spec #(instance? byte-array-type %)
-          :gen gen/bytes))
+;; TODO: Make this go away.
+;; Everything that uses it should just switch to using the builtin.
+;; Right?
+(s/def ::byte-array-type bytes?)
 (s/def ::byte-array-seq (s/coll-of ::byte-array-type))
 ;; I hated this name the first few times I ran across it in argument lists.
 ;; Now that I've typed out the full keyword-or-keywords often enough, I get it.
