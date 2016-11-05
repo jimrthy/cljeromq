@@ -29,5 +29,12 @@
     (let [generated (gen/generate (s/gen :cljeromq.common/testable-write-socket))]
       (dotimes [_ 10]
         (.write generated (gen/generate (gen/bytes)))))))
-(comment (write-socket-generation)
-         )
+(comment (write-socket-generation))
+
+(deftest byte-array-gen
+  (testing "Byte Array spec generator doesn't blow up"
+    (let [generated (s/exercise (s/gen :cljeromq.commn/byte-array-type))]
+      (doseq [bs generated]
+        ;; TODO: Come up with a better test than this
+        (is bs)))))
+(comment (byte-array-gen))

@@ -13,7 +13,9 @@
 ;;; Specs
 
 (def byte-array-type (Class/forName "[B"))
-(s/def ::byte-array-type #(instance? byte-array-type %))
+(s/def ::byte-array-type
+  (s/spec #(instance? byte-array-type %)
+          :gen gen/bytes))
 (s/def ::byte-array-seq (s/coll-of ::byte-array-type))
 ;; I hated this name the first few times I ran across it in argument lists.
 ;; Now that I've typed out the full keyword-or-keywords often enough, I get it.
@@ -97,6 +99,7 @@
   (gen/return (reify
                 IReadable
                 (read [this]
+                  ;; TODO: Switch to just using the byte-array-type generator?
                   (gen/generate (gen/bytes))))))
 (s/def ::testable-read-socket
   (s/spec #(satisfies? IReadable %)
@@ -111,9 +114,9 @@
                   ;; input.
                   ;; Q: What else could possibly make sense?
                   nil))))
+(s/def ::write-socket (s/spec #(satisfies? IWriteable %)))
 (s/def ::testable-write-socket
-  (s/spec #(satisfies? IWriteable %)
-          :gen gen-writeable-socket))
+  (s/spec ::write-socket :gen gen-writeable-socket))
 
 ;; TODO: Look up the rest
 (s/def ::zmq-protocol #{:inproc :tcp})
