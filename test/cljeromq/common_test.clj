@@ -5,41 +5,29 @@
             [clojure.spec.gen :as gen]
             [clojure.test :refer (deftest is testing)]))
 
-(deftest socket-spec
-  (testing "Basic socket spec validation"
-    ;; Automating this sort of thing is pretty much the entire
-    ;; point to generative testing.
-    ;; Q: isn't it?
-    ;; A: Well, generally. But this test is specifically because
-    ;; I'm having issues with the basic spec declaration and checking.
-    ;; If one socket type passes, they all will.
-    ;; This gets more interesting with higher-level abstractions that
-    ;; track things like socket types, URLs, and actual interactions.
-    (let [ctx (mq/context 1)
-          sock (mq/socket! ctx :pub)]
-      (is (s/valid? :cljeromq.common/socket sock)))))
 
-(deftest socket-generation
-  (testing "Do I have this generator spec'd correctly?"
-    (let [generator (s/gen :cljeromq.common/testable-read-socket)]
-      (is (s/exercise generator) "Just accomplishing that much is a win"))))
-(comment (socket-generation)
-         )
-
-(comment
-  (let [generated
-        (s/exercise :cljeromq.common/testable-read-socket)]
-    (println "Generated OK. Trying to use it...")
-    (let [actual (-> generated first second)]
+(deftest read-socket-generation
+  ;; Honestly, this is a pretty silly test.
+  ;; It was more a proof of the concept than anything else.
+  ;; Though it did take quite a while to sort out the actual
+  ;; technique, because the documents still aren't great.
+  (testing "Can generate a mock Read socket that produces gibberish on demand"
+    (let [generated (s/exercise :cljeromq.common/testable-read-socket)
+          ;; exercise produces a seq of pairs.
+          ;; First of each pair is the value generated.
+          ;; Second is the conformed version.
+          actual (-> generated first second)]
       (dotimes [_ 10]
-        (println (String. (.read actual))))))
-  ;; This is generating 10 pairs the same small integers
-  ;; (mostly positives, a few 0's, and 1 or two negatives).
-  ;; Haven't seen anything where (< 32 (abs %)) yet
-  ;; Note that the pairs are identical.
-  ;; That's because s/exercise returns a seq of [val conformed-val]
-  ;; tuples.
-  (let [generated (s/exercise integer?)]
-    (println "Generated OK. Trying to print random ints")
-    (map str generated))
-  )
+        (is (.read actual))))))
+(comment (read-socket-generation))
+
+(deftest write-socket-generation
+  ;; Honestly, this is an even sillier test than the read-socket generator.
+  ;; The random data generator probably makes sense for a test involving
+  ;; real sockets, though
+  (testing "Can generate a mock Write socket that silently swallows gibberish on demand"
+    (let [generated (gen/generate (s/gen :cljeromq.common/testable-write-socket))]
+      (dotimes [_ 10]
+        (.write generated (gen/generate (gen/bytes)))))))
+(comment (write-socket-generation)
+         )

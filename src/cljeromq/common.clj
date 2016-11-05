@@ -92,34 +92,14 @@
         (.socket ctx actual))))
   (def gen-socket (partial socket-creator (s/gen ::socket-type))))
 
-;; OK, how are these really supposed to work?
 (defn gen-readable-socket
   []
   (gen/return (reify
                 IReadable
                 (read [this]
-                  (println "Trying to read")
                   (gen/generate (gen/bytes))))))
-(comment
-  ;; Just verifying that reify does what I think
-  (println (str (reify
-                  Object
-                  (toString [this]
-                    "blah")))))
 (s/def ::testable-read-socket
-  (s/spec #_(instance? IReadable %)
-          (fn [x]
-            (println "Conforming " x "to verify that it's a IReadable? (spoiler: it's a" (class x) ")")
-            (try
-              (let [success (satisfies? IReadable x)]
-                (try
-                  (println "It was" (if success "" "not") "!")
-                  (catch ClassCastException ex
-                    (println "Failed trying to document result of instance?")))
-                (when success
-                  x))
-              (catch ClassCastException ex
-                (println "Failure trying to call instance?:" ex))))
+  (s/spec #(satisfies? IReadable %)
           :gen gen-readable-socket))
 (defn gen-writeable-socket
   []
@@ -132,7 +112,7 @@
                   ;; Q: What else could possibly make sense?
                   nil))))
 (s/def ::testable-write-socket
-  (s/spec #(instance? IWriteable %)
+  (s/spec #(satisfies? IWriteable %)
           :gen gen-writeable-socket))
 
 ;; TODO: Look up the rest
