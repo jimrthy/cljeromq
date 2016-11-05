@@ -12,6 +12,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Specs
 
+(def byte-array-type (Class/forName "[B"))
 ;; TODO: Make this go away.
 ;; Everything that uses it should just switch to using the builtin.
 ;; Right?
