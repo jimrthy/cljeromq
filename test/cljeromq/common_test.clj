@@ -58,13 +58,18 @@
     ;; So this is my excuse to eliminate it.
     (let [generated (s/exercise bytes?)]
       (doseq [bs generated]
-        (let [n (count bs)]
-          (is (not (neg? n)))
-          (is (int? n)))))))
+        (is (nat-int? (count bs)))))))
 (comment (byte-array-gen)
 
          (try
            (s/exercise bytes?)q
            (catch clojure.lang.ExceptionInfo ex
-             (.getData ex)))
-         )
+             (.getData ex))))
+
+(deftest byte-seq-gen
+  (testing "Generating a seq of byte arrays"
+    (let [generated (s/exercise :cljeromq.common/byte-array-seq)]
+      (doseq [seqs generated]
+        (doseq [byte-array seqs]
+          (is (nat-int? (count byte-array))))))))
+(comment (byte-seq-gen))

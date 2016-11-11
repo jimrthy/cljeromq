@@ -9,8 +9,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Schema
 
-(s/def ::public bytes?)
-(s/def ::private bytes?)
+(s/def ::key bytes?)
+(s/def ::public ::key)
+(s/def ::private ::key)
 (s/def ::key-pair (s/keys :req-un [::public ::private]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

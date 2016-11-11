@@ -17,7 +17,7 @@
 But we do need it for places like method dispatch"
   (Class/forName "[B"))
 
-(s/def ::byte-array-seq (s/coll-of ::byte-array-type))
+(s/def ::byte-array-seq (s/coll-of bytes?))
 ;; I hated this name the first few times I ran across it in argument lists.
 ;; Now that I've typed out the full keyword-or-keywords often enough, I get it.
 (s/def ::korks (s/or :single-key keyword?
