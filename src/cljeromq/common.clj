@@ -44,11 +44,11 @@
                        :pair
                        :pub :sub
                        :router :dealer})
+
 (def Socket ZMQ$Socket)
 (def socket-descriptions #{})
 ;; Honestly, I need specs for both bound and connected sockets as well.
 (s/def ::socket #(instance? ZMQ$Socket %))
-
 ;; But start w/ this
 (defprotocol IBindingSocket
   "Things with known addresses, like servers, generally do this"
@@ -59,7 +59,6 @@
   (connect [this url]))
 (defprotocol IReadable
   "A socket you can read"
-  ;; TODO: Need to exclude clojure.core/read to avoid compiler warning
   (recv [this] "Returns a byte-array that was written from the other socket"))
 (defprotocol IWriteable
   (send [this array-of-bytes] "Sends array-of-bytes to the other socket"))
@@ -72,38 +71,43 @@
   IReadable {}
   IWriteable {})
 
+(defn create-test-reader
+  []
+  (reify
+    IReadable
+    (recv [this]
+      (println "Generated read socket .recv")
+      ;; TODO: Switch to just using the byte-array-type generator?
+      (gen/generate (gen/bytes)))))
 (comment
-  (defn- socket-creator
-    [nested-generator]
-    ;; nested-generator is a clojure.test.check.generators.Generator
-    ;; Which means that it has a :gen member
-    (println "Trying to generate a Socket based on"
-             nested-generator
-             "a" (class nested-generator))
-    (throw (ex-info "How did I get here?" {}))
-    (let [kind
-          ;; Can't call this directly
-          #_(nested-generator)
-          ;; Can't use gen to call it
-          #_(s/gen nested-generator)
-          ;; This fails because I have to supply args
-          #_((:gen nested-generator))
-          (throw (ex-info "Well, what should I do?" {}))]
-      (comment) (println "Generating a" kind "socket")
-      (let [ctx (ZMQ/context 2)
-            actual (K/sock->const kind)]
-        (.socket ctx actual))))
-  (def gen-socket (partial socket-creator (s/gen ::socket-type))))
+  ;; Take this down to its minimum
+  (.recv (create-test-reader)))
 
 (defn gen-readable-socket
   []
-  (gen/return (reify
-                IReadable
-                (recv [this]
-                  ;; TODO: Switch to just using the byte-array-type generator?
-                  (gen/generate (gen/bytes))))))
+  ;; When I try to actually use this, in frereth.common.baseline-test, I wind
+  ;; up with this error:
+  ;; No matching method found: recv for class cljeromq.common$gen_readable_socket$reify__34272
+  ;; Things I've tried:
+  ;; Calling whatever reify returns.
+  ;; That error is:
+  ;; cljeromq.common$gen_readable_socket$reify__35997 cannot be cast to clojure.lang.IFn
+  ;; Note that cljeromq.common-test calls this, and it's fine
+  (gen/return (create-test-reader)))
 (s/def ::testable-read-socket
-  (s/spec #(satisfies? IReadable %)
+  (s/spec (fn [x]
+            (println "Checking the Read Socket spec for" x)
+            (let [result (satisfies? IReadable x)]
+              (if result
+                (do
+                  (println "This is fine")
+                  ;; OK, doing this breaks things.
+                  ;; So I'm missing something that should be obvious.
+                  (println "Generated:" (.recv x))
+                  x)
+                (do
+                  (println x "does not implement IReadable")
+                  nil))))
           :gen gen-readable-socket))
 
 (defn gen-writeable-socket

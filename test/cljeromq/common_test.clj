@@ -7,6 +7,22 @@
 
 
 (deftest read-socket-generation
+  ;; This test seems ridiculous.
+  ;; spec will validate by generator by checking its output,
+  ;; so this should be totally redundant.
+  ;; But I'm getting errors that seem like they must be related
+  ;; to this just the same.
+  ;; So be safe about this.
+  (testing "Can generate a mock Read socket that produces gibberish on demand"
+    (let [generated (s/exercise :cljeromq.common/testable-read-socket)
+          ;; exercise produces a seq of pairs.
+          ;; First of each pair is the value generated.
+          ;; Second is the conformed version.
+          actual (-> generated first second)]
+      (is (s/valid? :cljeromq.common/testable-read-socket actual)))))
+(comment (read-socket-generation))
+
+(deftest exercise-read-socket
   ;; Honestly, this is a pretty silly test.
   ;; It was more a proof of the concept than anything else.
   ;; Though it did take quite a while to sort out the actual
