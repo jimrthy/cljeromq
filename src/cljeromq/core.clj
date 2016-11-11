@@ -21,7 +21,7 @@
 Should probably update the API to keep it compatible w/ cljzmq
 to make swapping back and forth seamless."
   (:require [cljeromq
-             [common :as common :refer (byte-array-type)]
+             [common :as common]
              [constants :as K]]
             [clojure
              [edn :as edn]
@@ -53,7 +53,7 @@ to make swapping back and forth seamless."
 
 (s/fdef send!
         :args (s/cat :socket :cljeromq.common/socket
-                     :message (s/or :byte-array :cljoromq.common/byte-array-type
+                     :message (s/or :byte-array bytes?
                                     :string string?
                                     :other any?)
                      :flags :cljeromq.constants/socket-options))
@@ -386,7 +386,7 @@ Returns the port number"
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Send
 
-(defmethod send! byte-array-type
+(defmethod send! common/byte-array-type
   [socket message flags]
   (comment (println "Sending byte array on" socket "\nFlags:" flags))
   (when-not (.send socket message 0 (count message) (K/flags->const flags))
@@ -433,7 +433,7 @@ Returns the port number"
 (s/fdef send-partial!
         :args (s/cat :socket :cljeromq.common/socket
                      :message (s/or :string string?
-                                    :bytes :cljeromq.common/byte-array-type)))
+                                    :bytes bytes?)))
 (defn send-partial! [socket message]
   "I'm seeing this as a way to send all the messages in an envelope, except
 the last.
@@ -444,7 +444,7 @@ Honestly, that's probably a clue that this basic idea is just wrong."
 (s/fdef send-all!
         :args (s/cat :socket :cljeromq.common/socket
                      :messages (s/coll-of (s/or :string string?
-                                                :bytes :cljeromq.common/byte-array-type))))
+                                                :bytes bytes?))))
 (defn send-all! [socket messages]
   "At this point, I'm basically envisioning the usage here as something like HTTP.
 Where the headers back and forth carry more data than the messages.
@@ -501,7 +501,7 @@ It totally falls apart when I'm just trying to send a string."
 (s/fdef raw-recv!
         :args (s/cat :socket :cljeromq.common/socket
                      :flags :cljeromq.constant/socket-type)
-        :ret :cljeromq.common/byte-array-type)
+        :ret bytes?)
 (defn raw-recv!
   ([socket flags]
    (comment (println "Top of raw-recv"))
@@ -550,7 +550,7 @@ More importantly (probably) is EDN."
 (s/fdef recv-all!
         :args (s/cat :socket :cljeromq.common/socket
                      :flags :cljerom.constants/socket-options)
-        :ret (s/coll-of :cljeromq.common/byte-array-type))
+        :ret (s/coll-of bytes?))
 (defn recv-all!
   "Receive all available message parts.
 Q: Does it make sense to accept flags here?
@@ -789,7 +789,7 @@ Currently, I only need this one."
 
 (s/fdef string->bytes
         :args (s/cat :s string?)
-        :ret :cljeromq.common/byte-array-type)
+        :ret bytes?)
 (defn string->bytes
   "Converts a string into a java array of bytes
 
@@ -807,7 +807,7 @@ examples for bytes, so that's pretty close"
       byte-array))
 
 (s/fdef bytes->string
-        :args (s/cat :bs :cljeromq.common/byte-array-type)
+        :args (s/cat :bs bytes?)
         :ret string?)
 (defn bytes->string
   "Converts a java array of bytes into a string"

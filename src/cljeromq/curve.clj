@@ -9,18 +9,15 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Schema
 
-;; Really just a shortcut to help reduce typing
-(s/def ::byte-array-type
-  :cljeromq.common/byte-array-type)
-(s/def ::public ::byte-array-type)
-(s/def ::private ::byte-array-type)
+(s/def ::public bytes?)
+(s/def ::private bytes?)
 (s/def ::key-pair (s/keys :req-un [::public ::private]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Public
 
 (s/fdef z85-encode
-        :args (s/cat :blob ::byte-array-type)
+        :args (s/cat :blob bytes?)
         :ret string?)
 (defn z85-encode
   [blob]
@@ -28,7 +25,7 @@
 
 (s/fdef z85-decode
         :args (s/cat :blob string?)
-        :ret ::byte-array-type)
+        :ret bytes)
 (defn z85-decode
   [blob]
   (ZMQ$Curve/z85Decode blob))
@@ -54,7 +51,7 @@ e.g.
 
 (s/fdef make-socket-a-server!
         :args (s/cat :sock :cljeromq.common/socket
-                     :private-key ::byte-array-type)
+                     :private-key bytes)
         :ret :cljeromq.common/socket)
 (defn make-socket-a-server!
   "Adjust sock so that it's ready to serve CURVE-encrypted messages."
@@ -83,7 +80,7 @@ e.g.
 (s/fdef prepare-client-socket-for-server!
         :args (s/cat :sock :cljeromq.common/socket
                      :key-pair ::key-pair
-                     :server-public-key ::byte-array-type)
+                     :server-public-key bytes?)
         :ret :cljeromq.common/socket)
 (defn prepare-client-socket-for-server!
   "Adjust socket options to make it suitable for connecting as
@@ -102,7 +99,7 @@ Which seems like a truly horrid idea."
 (s/fdef server-socket
         :args (s/cat :ctx :cljeromq.common/context
                      :type :cljeromq.common/socket-type
-                     :private-key ::byte-array-type)
+                     :private-key bytes?)
         :ret :cljeromq.common/socket)
 (defn server-socket
   "Create a new socket suitable for use as a CURVE server.

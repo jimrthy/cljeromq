@@ -12,11 +12,11 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Specs
 
-(def byte-array-type (Class/forName "[B"))
-;; TODO: Make this go away.
-;; Everything that uses it should just switch to using the builtin.
-;; Right?
-(s/def ::byte-array-type bytes?)
+(def byte-array-type
+  "This isn't a spec. Use bytes? for that.
+But we do need it for places like method dispatch"
+  (Class/forName "[B"))
+
 (s/def ::byte-array-seq (s/coll-of ::byte-array-type))
 ;; I hated this name the first few times I ran across it in argument lists.
 ;; Now that I've typed out the full keyword-or-keywords often enough, I get it.
@@ -72,42 +72,20 @@
   IWriteable {})
 
 (defn create-test-reader
+  "This doesn't really need to be its own function outside gen-readable-socket.
+But splitting them up did make debugging easier"
   []
   (reify
     IReadable
     (recv [this]
-      (println "Generated read socket .recv")
-      ;; TODO: Switch to just using the byte-array-type generator?
+      ;; TODO: Switch to just using the generator for byte-array-type?
       (gen/generate (gen/bytes)))))
-(comment
-  ;; Take this down to its minimum
-  (.recv (create-test-reader)))
 
 (defn gen-readable-socket
   []
-  ;; When I try to actually use this, in frereth.common.baseline-test, I wind
-  ;; up with this error:
-  ;; No matching method found: recv for class cljeromq.common$gen_readable_socket$reify__34272
-  ;; Things I've tried:
-  ;; Calling whatever reify returns.
-  ;; That error is:
-  ;; cljeromq.common$gen_readable_socket$reify__35997 cannot be cast to clojure.lang.IFn
-  ;; Note that cljeromq.common-test calls this, and it's fine
   (gen/return (create-test-reader)))
 (s/def ::testable-read-socket
-  (s/spec (fn [x]
-            (println "Checking the Read Socket spec for" x)
-            (let [result (satisfies? IReadable x)]
-              (if result
-                (do
-                  (println "This is fine")
-                  ;; OK, doing this breaks things.
-                  ;; So I'm missing something that should be obvious.
-                  (println "Generated:" (.recv x))
-                  x)
-                (do
-                  (println x "does not implement IReadable")
-                  nil))))
+  (s/spec #(satisfies? IReadable %)
           :gen gen-readable-socket))
 
 (defn gen-writeable-socket
