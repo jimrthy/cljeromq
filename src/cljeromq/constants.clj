@@ -171,7 +171,7 @@ socket options."
 (defn sock->const
   "Convert a socket keyword to a ZMQ constant"
   [key]
-  ((:socket-type const) key))
+  (-> const :socket-type key))
 
 (s/fdef option->const
         :args (s/cat :key ::socket-options))

@@ -59,9 +59,15 @@ But we do need it for places like method dispatch"
   (connect [this url]))
 (defprotocol IReadable
   "A socket you can read"
-  (recv [this] "Returns a byte-array that was written from the other socket"))
+  (recv
+    [this]
+    [this flags]
+    "Returns a byte-array that was written from the other socket"))
 (defprotocol IWriteable
-  (send [this array-of-bytes] "Sends array-of-bytes to the other socket"))
+  (send
+    [this array-of-bytes]
+    [this array-of-bytes flags]
+    "Sends array-of-bytes to the other socket"))
 ;;; This really defines all those protocols/interfaces. By implementing them.
 ;;; Retrofitting isn't ideal, but I have my doubts about getting alternatives
 ;;; accepted
@@ -78,7 +84,8 @@ But splitting them up did make debugging easier"
   (reify
     IReadable
     (recv [this]
-      ;; TODO: Switch to just using the generator for byte-array-type?
+      (gen/generate (gen/bytes)))
+    (recv [this flags]
       (gen/generate (gen/bytes)))))
 
 (defn gen-readable-socket
@@ -97,7 +104,10 @@ But splitting them up did make debugging easier"
                   ;; Seems like we should do something more than just swallowing the
                   ;; input.
                   ;; Q: What else could possibly make sense?
-                  nil))))
+                  nil)
+                (send
+                    [this array-of-bytes flags]
+                  true))))
 (s/def ::write-socket (s/spec #(satisfies? IWriteable %)))
 (s/def ::testable-write-socket
   (s/spec ::write-socket :gen gen-writeable-socket))

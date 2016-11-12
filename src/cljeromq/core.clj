@@ -140,8 +140,10 @@ Seems like a great idea in theory, but doesn't seem all that useful in practice"
   "Create a new socket.
 TODO: the type really needs to be an enum of keywords"
   [ctx type]
-  (let [^Integer real-type (K/sock->const type)]
-    (io! (.socket ctx real-type))))
+  (if-let [^Integer real-type (K/sock->const type)]
+    (io! (.socket ctx real-type))
+    (throw (ex-info "Unknown socket type"
+                    {:requested type}))))
 
 (s/fdef set-linger!
         :args (s/cat :s :cljeromq.common/socket

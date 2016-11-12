@@ -11,6 +11,7 @@
 
 (s/def ::key bytes?)
 (s/def ::public ::key)
+;; TODO: Change the nomenclature on this to secret
 (s/def ::private ::key)
 (s/def ::key-pair (s/keys :req-un [::public ::private]))
 
