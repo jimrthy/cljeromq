@@ -67,6 +67,7 @@ But we do need it for places like method dispatch"
   (send
     [this array-of-bytes]
     [this array-of-bytes flags]
+    [this array-of-bytes start end flags]
     "Sends array-of-bytes to the other socket"))
 ;;; This really defines all those protocols/interfaces. By implementing them.
 ;;; Retrofitting isn't ideal, but I have my doubts about getting alternatives
@@ -104,9 +105,11 @@ But splitting them up did make debugging easier"
                   ;; Seems like we should do something more than just swallowing the
                   ;; input.
                   ;; Q: What else could possibly make sense?
+                  ;; Bigger Q: What should this return?
                   nil)
-                (send
-                    [this array-of-bytes flags]
+                (send [this array-of-bytes flags]
+                  true)
+                (send [this array-of-bytes start end flags]
                   true))))
 (s/def ::write-socket (s/spec #(satisfies? IWriteable %)))
 (s/def ::testable-write-socket
