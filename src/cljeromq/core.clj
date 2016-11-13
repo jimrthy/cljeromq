@@ -392,6 +392,7 @@ Returns the port number"
   [socket message flags]
   (comment (println "Sending byte array on" socket "\nFlags:" flags))
   (when-not (.send socket message 0 (count message) (K/flags->const flags))
+    (comment (println "Sending failed. Oh no!!"))
     (throw (ex-info "Sending failed" {:not-implemented "What went wrong?"}))))
 
 (defmethod send! String

@@ -85,9 +85,15 @@ But splitting them up did make debugging easier"
   (reify
     IReadable
     (recv [this]
-      (gen/generate (gen/bytes)))
+      (gen/generate (gen/bytes))
+      #_(-> {:a 1, :b 2, :c 3}
+          pr-str
+          .getBytes))
     (recv [this flags]
-      (gen/generate (gen/bytes)))))
+      (gen/generate (gen/bytes))
+      #_(-> {:a 1, :b 2, :c 3}
+          pr-str
+          .getBytes))))
 
 (defn gen-readable-socket
   []
