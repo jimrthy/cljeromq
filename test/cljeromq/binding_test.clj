@@ -4,7 +4,8 @@
   (:require [clojure.pprint :refer (pprint)]
             [clojure.test :refer :all]
             [cljeromq.core :as cljeromq]
-            [cljeromq.curve :as curve]))
+            [cljeromq.curve :as curve]
+            [clojure.core.async :as async]))
 
 (deftest req-rep-inproc-unencrypted-handshake
   (println "REQ/REP inproc handshake")
@@ -13,36 +14,74 @@
           ctx (cljeromq/context 1)]
       (println "Checking req/rep unencrypted inproc")
       (try
-        (let [req (cljeromq/socket! ctx :req)]
+        (let [server (cljeromq/socket! ctx :rep)]
           (try
-            (cljeromq/bind! req uri)
+            (cljeromq/bind! server uri)
             (try
-              (let [rep (cljeromq/socket! ctx :rep)]
+              (let [client (cljeromq/socket! ctx :req)]
                 (try
-                  (cljeromq/connect! rep uri)
+                  (cljeromq/connect! client uri)
                   (try
-                    (let [client (future (cljeromq/send! req "HELO")
-                                         (String. (cljeromq/recv! req)))]
-                      (let [greet (cljeromq/recv! rep)]
-                        (is (= "HELO" (String. greet))))
-                      (cljeromq/send! rep "kthxbye")
-                      (is (= @client "kthxbye")))
+                    (let [handshake (future
+                                   (println "Client sending HELO")
+                                   (try
+                                     (cljeromq/send! client "HELO" 0)
+                                     (catch ExceptionInfo ex
+                                       (is false (.getData ex))
+                                       (throw ex)))
+                                   (println "Client waiting on response")
+                                   (String. (cljeromq/recv! client 0)))]
+                      (println "Server waiting on a connection")
+                      (try
+                        (let [greet (cljeromq/recv! server 0)]
+                          (is (= "HELO" (String. greet))))
+                        (catch ExceptionInfo ex
+                          (is (nil? (.getData ex)))
+                          (throw ex)))
+                      (println "Server sending response")
+                      (let [response "kthxbye"]
+                        (cljeromq/send! server response)
+                        (println "Verifying that client received proper response")
+                        (is (= @handshake response))))
                     (finally
-                      (cljeromq/disconnect! rep uri)))
+                      (cljeromq/disconnect! client uri)))
                   (finally
-                    (cljeromq/close! rep))))
+                    (cljeromq/close! client))))
               (finally
                 ;; Can't unbind inproc socket
                 ;; This is actually Bug #949 in libzmq.
                 ;; It should be fixed in 4.1.0, but backporting to 4.0.x
                 ;; has been deemed not worth the effort
                 (try
-                  (cljeromq/unbind! req uri)
+                  (cljeromq/unbind! server uri)
                   (catch ExceptionInfo _
+                    ;; Can't unbind an inproc socket
+                    ;; Depends on the 0mq version. This is fixed in latest.
                     (is true "This matches current, albeit incorrect, behavior")))))
-            (finally (cljeromq/close! req))))
+            (finally (cljeromq/close! server))))
         (finally
           (cljeromq/terminate! ctx))))))
+(comment
+  (req-rep-inproc-unencrypted-handshake)
+
+;; Break it down step by step
+  (def uri "inproc://a-test-1")
+  (def ctx (cljeromq/context 1))
+  (def server (cljeromq/socket! ctx :rep))
+  (cljeromq/bind! server uri)
+  (def client (cljeromq/socket! ctx :req))
+  (cljeromq/connect! client uri)
+  (let [c (async/chan)]
+    (async/go
+      (async/<! c)
+      (println "Server received:\n" (cljeromq/recv! server 0)))
+    (cljeromq/send! client "actdueoa" 0)
+    (async/>!! c :go))
+  (cljeromq/disconnect! client uri)
+  (cljeromq/close! client)
+  (cljeromq/unbind! server uri)
+  (cljeromq/close! server)
+  (cljeromq/terminate! ctx))
 
 (deftest simplest-tcp-test
   (testing "TCP REP/REQ handshake"
@@ -118,49 +157,73 @@
             (finally (cljeromq/close! router))))
         (finally (cljeromq/terminate! ctx))))))
 
-(deftest test-not-really-encrypted-req-rep
-  "TODO: Switch to TCP so there's a point"
+(defn send-in-future
+  [src msg]
+  (future
+    ;; Note that this should very definitely block
+    (let [success (cljeromq/send! src msg 0)]
+      (when (< success 0)
+        (println "Sending request returned:" success)
+        ;; Q: Is there any point to this approach now?
+        (is false "Should have thrown an exception on failure"))
+      success)))
+
+(deftest test-encrypted-req-rep
   (let [client-keys (curve/new-key-pair)
         server-keys (curve/new-key-pair)
         ctx (cljeromq/context 1)
         client (cljeromq/socket! ctx :req)]
     (try
-      ;; There isn't any point to encrypting inproc traffic
-      (println "[not] Encrypted req/rep inproc test")
+      (println "Encrypted req/rep test")
       (curve/prepare-client-socket-for-server! client client-keys (:public server-keys))
-      (cljeromq/bind! client "inproc://reqrep")
-
       (try
         (let [server (cljeromq/socket! ctx :rep)]
           (try
             (curve/make-socket-a-server! server server-keys)
-            (cljeromq/connect! server "inproc://reqrep")
+            ;; Should be able to bind/connect in either direction/order...right?
+            ;; TODO: Switch back to binding the client first and then connecting the server
+            (cljeromq/bind! server "tcp://*:6001")
+            (cljeromq/connect! client "tcp://localhost:6001")
 
             (try
               (dotimes [n 10]
                 (let [req (.getBytes (str "request" n))
                       rep (.getBytes (str "reply" n))]
                   (comment (println n))
-                  ;; Q: What should sending without a listener do in this scenario?
-                  (let [success (cljeromq/send! client req 0)]
-                    (when-not success
-                      (println "Sending request number" n "returned '" success "'")
-                      ;; Q: Is there any point to this approach now?
-                      (is false "Should have thrown an exception on failure")))
-                  (let [response (cljeromq/recv! server 0)]
-                    (is (= (String. req) (String. response))))
 
-                  (let [success (cljeromq/send! server (String. rep))]
-                    (when-not success
-                      (println "Error sending Reply: " success)
-                      ;; Another absolutely meaningless test
-                      (is (or false true))))
-                  (let [response (cljeromq/recv! client 0)]
-                    (is (= (String. rep) (String. response))))))
-              (finally (cljeromq/disconnect! server "inproc://reqrep")))
+                  (let [send-future (send-in-future client req)]
+                    (try
+                      ;; This should block until we receive something...right?
+                      ;; (A: Yes. DONTWAIT == 1)
+                      ;; Note that we just successfully sent the initial req directly above.
+                      ;; Q: Are we really?
+                      ;; Note that this call should now be throwing a RuntimeException
+                      ;; when it fails.
+                      (let [response (cljeromq/recv! server 0)]
+                        (is (= (String. req) (String. response))))
+                      ;; TODO: Verify that send-future has been realized
+                      (is (>= @send-future 0))
+                      (try
+                        (let [send-future (send-in-future server (String. rep))]
+                          (try
+                            (let [response (cljeromq/recv! client 0)]
+                              (is (= (String. rep) (String. response))))
+                            (catch ExceptionInfo ex
+                              (is (not (.getData ex)))))
+                          ;; TODO: Verify that send-future has been realized
+                          (is (>= @send-future 0))))
+                      (catch ExceptionInfo ex
+                        ;; Lots of things could go wrong there.
+                        ;; This should not be one of them.
+                        ;; However, it is.
+                        ;; Worse, the loop keeps trying to run after the test has failed.
+                        ;; Although that probably makes sense since the failure probably
+                        ;; isn't raising an exception
+                        (is false (.getData ex)))))))
+              (finally (cljeromq/unbind! server "tcp://*:6001")))
             (finally (cljeromq/close! server))))
         (finally
-          (cljeromq/unbind! client "inproc://reqrep")))
+          (cljeromq/disconnect! client "tcp://localhost:6001")))
       (finally
         (cljeromq/close! client)
         (cljeromq/terminate! ctx)))))
@@ -174,6 +237,8 @@
         pull (cljeromq/socket! ctx :pull)
         address "tcp://127.0.0.1:52711"]
     (try
+      ;; This doesn't seem to work.
+      ;; Q: Why not?
       (cljeromq/set-time-out! pull 200)
       (curve/make-socket-a-server! pull server-keys)
       (cljeromq/bind! pull address)
@@ -184,11 +249,15 @@
             (cljeromq/connect! push address)
             (try
               (dotimes [n 10]
-                (let [req (.getBytes (str "request" n))
-                      rep (.getBytes (str "reply" n))]
-                  (is (cljeromq/send! push req 0) (str "Pushing failed: " (cljeromq/last-error)))
-                  (let [response (cljeromq/recv! pull 0)]
-                    (is (= (String. req) (String. response))))))
+                (testing (str "Encrypted push/pull #" n)
+                  (let [req (.getBytes (str "request" n))
+                        rep (.getBytes (str "reply" n))]
+                    (println "Encrypted Push #" n)
+                    (is (cljeromq/send! push req 0) (str "Pushing failed: " (cljeromq/last-error)))
+                    ;; Just to make sure there's plenty of time for that to get through the buffers
+                    (Thread/sleep 15)
+                    (let [response (cljeromq/recv! pull [:dont-wait])]
+                      (is (= (String. req) (String. response)))))))
               (finally (cljeromq/disconnect! push address)))
             (finally (cljeromq/close! push))))
         (finally (cljeromq/unbind! pull address)))
@@ -333,6 +402,72 @@ In the previous incarnation, everything except tcp seemed to work"
       (finally
         (cljeromq/close! dealer)
         (cljeromq/terminate! ctx)))))
+
+(deftest basic-push-pull
+  (testing "Context creation"
+    (if-let [ctx (cljeromq/context 2)]
+      (try
+        (testing "Pull allocation"
+          (if-let [receiver (cljeromq/socket! ctx :pull)]
+            (try
+              (testing "Pull binding"
+                (let [address "tcp://127.0.0.1:27835"]
+                  (cljeromq/bind! receiver address)
+                  (try
+                    (testing "Push allocation"
+                      (if-let [sender (cljeromq/socket! ctx :push)]
+                        (try
+                          (testing "Push connection"
+                            (cljeromq/connect! sender address)
+                            (try
+                              (testing "Lock-step push-pull"
+                                (doseq [n (range 10)]
+                                  (let [msg (str "Message #" n)]
+                                    ;; Q: Will this block?
+                                    ;; A: No, it just fails.
+                                    ;; Q: What on earth is going on?
+                                    (cljeromq/send! sender msg 0)
+                                    (let [received (cljeromq/recv! receiver 0)]
+                                      (is (= received msg))))))
+                              (testing "Receive in background"
+                                (let [background
+                                      (async/go-loop [ns (range 10)]
+                                        (when-let [n (first ns)]
+                                          (let [recvd (cljeromq/recv! receiver)]
+                                            (is (= (str "Message #" n) recvd)))
+                                          (recur (rest ns))))]
+                                  (doseq [n (range 10)]
+                                    (let [msg (str "Message #" n)]
+                                      ;; Q: Will this block?
+                                      (cljeromq/send! sender msg 0)))
+                                  (is (not (async/<!! background)))))
+                              (testing "Sending in background"
+                                (let [background
+                                      (async/go-loop [ns (range 10)]
+                                        (when-let [n (first ns)]
+                                          (let [msg (str "Message #" n)]
+                                            ;; Q: Will this block?
+                                            (cljeromq/send! sender msg 0))
+                                          (recur (rest ns))))]
+                                  (doseq [n (range 10)]
+                                    (let [recvd (cljeromq/recv! sender :wait)]
+                                      (is (= recvd (str "Message #" n)))))
+                                  (is (not (async/<!! background)))))
+                              (finally
+                                (cljeromq/disconnect! sender address))))
+                          (finally
+                            (cljeromq/close! sender)))))
+                    (finally
+                      (cljeromq/unbind! receiver address)))))
+              (finally
+                (cljeromq/close! receiver)))
+            (is false "Allocating pull socket failed")))
+        (finally
+          (cljeromq/terminate! ctx)))
+      (is false "Failed to allocate context"))))
+
+(comment
+  (basic-push-pull))
 
 (deftest minimal-curveless-communication-test
   (testing "Because communication is boring until the principals can swap messages"
