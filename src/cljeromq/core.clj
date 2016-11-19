@@ -379,7 +379,14 @@ Returns the port number"
 (defn close-internal-pair!
   [pair]
   ;; Q: Is there any point to setting linger to 0?
-  (println "cljeromo: Stopping an internal pair")
+  (println "cljeromq: Stopping an internal pair,"
+           (:lhs pair)
+           "connected to"
+           (:rhs pair)
+           "via"
+           (:url pair)
+           "actual keys available:"
+           (keys pair))
   (disconnect! (:lhs pair) (:url pair))
   (println "lhs disconnected")
   (close! (:lhs pair))
