@@ -33,7 +33,9 @@ to make swapping back and forth seamless."
            [java.util Random]
            [org.zeromq
             ZMQ
+            ZMQ$Context
             ZMQ$Poller
+            ZMQ$Socket
             ZMQException]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -82,7 +84,7 @@ to make swapping back and forth seamless."
         :args (s/cat :sock :cljeromq.common/socket)
         :ret boolean?)
 (defn has-more?
-  [sock]
+  [^ZMQ$Socket sock]
   (.hasReceiveMore sock))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -118,7 +120,7 @@ Q: Why didn't I name this context! ?"
   "Stop a messaging context.
 If you have outgoing sockets with a linger value (which is the default), this will block until
 those messages are received."
-  [ctx]
+  [^ZMQ$Context ctx]
   (io!
    (.term ctx)))
 
@@ -139,7 +141,7 @@ Seems like a great idea in theory, but doesn't seem all that useful in practice"
 (defn socket!
   "Create a new socket.
 TODO: the type really needs to be an enum of keywords"
-  [ctx type]
+  [^ZMQ$Context ctx type]
   (if-let [^Integer real-type (K/sock->const type)]
     (io! (.socket ctx real-type))
     (throw (ex-info "Unknown socket type"
@@ -149,7 +151,7 @@ TODO: the type really needs to be an enum of keywords"
         :args (s/cat :s :cljeromq.common/socket
                      :n integer?))
 (defn set-linger!
-  [s n]
+  [^ZMQ$Socket s n]
   (io!
    (.setLinger s n)))
 
@@ -162,14 +164,14 @@ TODO: the type really needs to be an enum of keywords"
 Desperately needs documentation"
   ([s]
    (set-router-mandatory! s true))
-  ([s on]
+  ([^ZMQ$Socket s on]
    (.setRouterMandatory s on)))
 
 (s/fdef close!
         :args (s/cat :s :cljeromq.common/socket))
 (defn close!
   "You're done with a socket."
-  [s]
+  [^ZMQ$Socket s]
   ;; Q: Is it more appropriate to wrap both in io!
   ;; or let set-linger's io! speak for itself?
   ;; Maybe I should just be wrapping up the .close
@@ -207,7 +209,7 @@ Any given machine can only have one socket bound to one endpoint at any given ti
 
 It might be helpful (though ultimately misleading) to think of this call as setting
 up the server side of an interaction."
-  [socket url]
+  [^ZMQ$Socket socket url]
   (let [url (ensure-connection-string url)]
     (try
       (io! (.bind socket url))
@@ -232,7 +234,7 @@ Returns the port number"
      port))
   ([socket endpoint min]
    (bind-random-port! socket endpoint min 65535))
-  ([socket endpoint min max]
+  ([^ZMQ$Socket socket endpoint min max]
    (io!
     (.bindToRandomPort socket endpoint min max))))
 
@@ -241,7 +243,7 @@ Returns the port number"
                      :url ::url)
         :ret :cljeromq.common/port)
 (defn unbind!
-  [socket url]
+  [^ZMQ$Socket socket url]
   (io!
    (try
      ;; TODO: Check the protocol.
@@ -296,7 +298,7 @@ Returns the port number"
                      :url ::url)
         :ret :cljeromq.common/socket)
 (defn connect!
-  [socket url]
+  [^ZMQ$Socket socket url]
   (let [real-url (ensure-connection-string url)]
     (io! (.connect socket real-url)))
   socket)
@@ -306,7 +308,7 @@ Returns the port number"
                      :url ::url)
         :ret :cljeromq.common/socket)
 (defn disconnect!
-  [socket url]
+  [^ZMQ$Socket socket url]
   (io! (.disconnect socket url)))
 
 ;; TODO: Spec this
@@ -339,7 +341,7 @@ Returns the port number"
                      :topic string?))
 (defn subscribe!
   "SUB sockets won't start receiving messages until they've subscribed"
-  ([socket topic]
+  ([^ZMQ$Socket socket topic]
    (io! (.subscribe socket (.getBytes topic)))
    socket)
   ([socket]
@@ -351,7 +353,7 @@ Returns the port number"
         :args (s/cat :socket :cljeromq.common/socket
                      :topic string?))
 (defn unsubscribe!
-  ([socket topic]
+  ([^ZMQ$Socket socket topic]
    (io! (.unsubscribe socket (.getBytes topic))))
   ([socket]
    ;; Q: This *does* unsubscribe from everything, doesn't it?
@@ -389,14 +391,14 @@ Returns the port number"
 ;;; Send
 
 (defmethod send! common/byte-array-type
-  [socket message flags]
+  [^ZMQ$Socket socket message flags]
   (comment (println "Sending byte array on" socket "\nFlags:" flags))
   (when-not (.send socket message 0 (count message) (K/flags->const flags))
     (comment (println "Sending failed. Oh no!!"))
     (throw (ex-info "Sending failed" {:not-implemented "What went wrong?"}))))
 
 (defmethod send! String
-  ([socket message flags]
+  ([^ZMQ$Socket socket ^String message flags]
    (comment (println "Sending string:\n" message))
    (send! socket (.getBytes message) flags))
   ([socket message]
@@ -493,7 +495,7 @@ It totally falls apart when I'm just trying to send a string."
                      :name string?)
         :ret :cljeromq.common/socket)
 (defn identify!
-  [socket name]
+  [^ZMQ$Socket socket ^String name]
   ;; TODO: Check for errors
   (io! (.setIdentity socket (.getBytes name)))
   socket)
@@ -506,7 +508,7 @@ It totally falls apart when I'm just trying to send a string."
                      :flags :cljeromq.constant/socket-type)
         :ret bytes?)
 (defn raw-recv!
-  ([socket flags]
+  ([^ZMQ$Socket socket flags]
    (comment (println "Top of raw-recv"))
    (let [flags (K/flags->const flags)]
      (comment (println "Receiving from socket (flags:" flags ")"))
@@ -577,7 +579,7 @@ A: Absolutely. May want to block or not."
                      :flags :cljerom.constants/socket-options)
         :ret (s/nilable string?))
 (defn recv-str!
-  ([socket]
+  ([^ZMQ$Socket socket]
    (-> socket recv! String. .trim))
   ([socket flags]
    ;; This approach risks NPE:
@@ -643,9 +645,9 @@ Aside from the fact that it seems like it'd be better to return a
 lazy seq of available sockets.
 For that matter, it seems like it would be better to just implement
 ISeq and return the next message as it becomes ready."
-  ([poller]
+  ([^ZMQ$Poller poller]
    (.poll poller))
-  ([poller timeout]
+  ([^ZMQ$Poller poller timeout]
    (.poll poller timeout)))
 
 (s/fdef register-socket-in-poller!
@@ -656,12 +658,12 @@ ISeq and return the next message as it becomes ready."
 ;; TODO: ^:always-validate
 (defn register-socket-in-poller!
   "Register a socket to poll 'in'."
-  ([socket
-    poller]
+  ([^ZMQ$Socket socket
+    ^ZMQ$Poller poller]
    (let [^Long flag (K/control->const :poll-in)]
      (io! (.register poller socket flag))))
-  ([socket
-    poller
+  ([^ZMQ$Socket socket
+    ^ZMQ$Poller poller
     flag
     & more-flags]
    ;; TODO: Verify that this does what I think with various flag keyword combinations
@@ -676,7 +678,7 @@ ISeq and return the next message as it becomes ready."
         :args (s/cat :poller :cljeromq.common/poller
                      :socket :cljeromq.common/socket))
 (defn unregister-socket-in-poller!
-  [poller socket]
+  [^ZMQ$Poller poller ^ZMQ$Socket socket]
   (io! (.unregister poller socket)))
 
 (defmacro with-poller [[poller-name context socket] & body]
@@ -714,7 +716,7 @@ current work)"
 
 (s/fdef in-available?
         :args (s/cat :poller :cljeromq.common/poller
-                     :n integer?)
+                     :n nat-int?)
         :ret boolean?)
 (defn in-available?
   "Did the last poll trigger poller's POLLIN flag on socket n?
@@ -723,7 +725,7 @@ Yes, this is the low-level interface aspect that I want to hide.
 There are err and out versions that do the same thing.
 
 Currently, I only need this one."
-  [poller n]
+  [^ZMQ$Poller poller n]
   (.pollin poller n))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -813,7 +815,9 @@ examples for bytes, so that's pretty close"
         :args (s/cat :bs bytes?)
         :ret string?)
 (defn bytes->string
-  "Converts a java array of bytes into a string"
+  "Converts a java array of bytes into a string
+
+TODO: How can I type-hint a ByteArray?"
   [bs]
   (String. bs))
 
