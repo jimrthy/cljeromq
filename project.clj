@@ -4,7 +4,7 @@
   ;; Q: Can I switch this to EPL?
   :license {:name "Lesser General Public License"
             :url "http://www.gnu.org/licenses/lgpl.html"}
-  :dependencies [[org.clojure/clojure "1.9.0-alpha13"]
+  :dependencies [[org.clojure/clojure "1.9.0-alpha15"]
                  [org.clojure/test.check "0.9.0"]
                  ;; Note that this very specifically does not get the associated
                  ;; native library (i.e. the JNI layer)
@@ -12,7 +12,11 @@
                  ;; I don't want to try to cope with getting 3.1.0
                  ;; installed and working (it won't build on recent versions
                  ;; of Debian/Ubuntu)
-                 [org.zeromq/jzmq "3.1.1-SNAPSHOT"]]
+                 #_[org.zeromq/jzmq "3.1.1-SNAPSHOT"]
+                 ;; Alternatively, this has been much easier to get
+                 ;; DRAFT features from python/jython than using the
+                 ;; official "low-level" language bindings.
+                 [org.zeromq/czmq-jni "4.0.3"]]
   ;; Because java isn't bright enough to find this without help.
   :jvm-opts [~(str "-Djava.library.path=/usr/local/lib:" (System/getenv "LD_LIBRARY_PATH"))]
   :plugins []
