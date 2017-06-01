@@ -5,7 +5,7 @@ try:
 except TypeError:
     print 'Specific socket constructors are not static'
 else:
-    print 'It would be nice if things worked this way'
+    print 'It would be nice if the JVM version worked this way'
 
 # But we can create a garbage socket in order to create
 # the ones we actually care about.
@@ -29,6 +29,8 @@ except TypeError as ex:
     # 1st arg can't be coerced to long
     print ex
 else:
+    # This is one of the failures I ran
+    # across in clojure
     print "I didn't expect that to work"
 
 success = f.send(c.self, 0)

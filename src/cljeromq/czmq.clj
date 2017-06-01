@@ -1,3 +1,91 @@
 (ns cljeromq.czmq
   "Experimenting with the basic idea"
-  (:import [org.zeromq.czmq Zframe Zsock]))
+  (:import [org.zeromq.czmq Zframe Zpoller Zsock]))
+
+(comment
+  ;; Need this because singleton methods aren't static yet
+  (def factory (Zsock. 0))
+
+  (def srv (.newServer factory "@inproc://abcde"))
+  (assert srv)
+  (def cli (.newClient factory ">inproc://abcde"))
+  (assert cli)
+
+  (def frame_factory (Zframe. (byte-array 0) 0))
+  ;; Don't want to block.
+  ;; => Need to use either Zloop or Zpoller
+  ;; Since Zloop is totally broken, that currently means Zpoller
+  (comment
+    (let [req "manual test"
+          f (Zframe. (.getBytes req) (count req))]
+      (.send f (.-self cli) 0))
+    (def rcvd  (.recv frame_factory (.-self srv)))
+    rcvd
+    (.strdup rcvd))
+
+  ;; Note that this only listens to the first spot
+  ;; You can add more later, as needed
+  (comment (def poller (Zpoller. (long-array [(.-self srv) 0]))))
+  ;; This next hoop ties into a problem the current implementation
+  ;; has with variadic arguments.
+  ;; The underlying constructor really accepts that, and uses
+  ;; the NULL pointer to mark the end of the list.
+  ;; The current JNI implementation just drops all arguments except
+  ;; the first.
+  ;; This means that, if you supply a parameter, this winds up
+  ;; crashing the JVM.
+  (def poller (Zpoller. (long-array [0])))
+  (println "Poller ID:" (.-self poller))
+  (assert (= 0 (.add poller (.-self srv))))
+
+  (let [req "getting somewhere"
+        _ (println "1")
+        _ (println "2")
+        frame_factory (Zframe. (byte-array 0) 0)]
+    (println "a")
+    (future
+      (Thread/sleep 50)
+      (let [req "getting somewhere"
+            f (Zframe. (.getBytes req) (count req))]
+        ;; It doesn't seem to matter how I send this.
+        ;; It's disappearing.
+        ;; This is doubly annoying because this worked in jython.
+        (comment (assert (= 0 (.send f (.-self cli) 0))))
+        (.send f (.-self cli) 0))
+      (println "Sent"))
+    (println "b")
+    (let [handle (.Wait poller 500)]
+      (println "Poller notified:" handle)
+      (if (and handle
+               (not= 0 handle))
+        (do
+          (println "Message available on srv, handle" handle)
+          (assert (= handle (.-self srv)))
+          (let [rcvd (.recv frame_factory (.-self srv))
+                body (.strdup rcvd)]
+            (assert (= (String. body) req))
+            (let [routing-id (.routingId rcvd)]
+              (.close rcvd)
+              ;; For proof-of-concept purposes, this is the interesting
+              ;; part: how do we send responses back to this socket?
+              routing-id)))
+        (println "Frame disappeared"))))
+
+  (.close poller)
+
+  (let [req "getting somewhere"
+        f (Zframe. (.getBytes req) (count req))]
+    (assert (= 0 (.send f (.-self cli) 0))))
+  (let [frame_factory (Zframe. (byte-array 0))
+        poller (Zpoller. (long-array [(.-self srv) 0]))]
+    (try
+      (let [rcvd (.recv frame_factory (.-self srv) 4)
+            body (.strdup rcvd)
+            req "getting somewhere"]
+        (assert (= (String. body) req))
+        (let [routing-id (.routingId rcvd)]
+          (.close rcvd)
+          routing-id))
+      (finally (.close poller))))
+
+  )
