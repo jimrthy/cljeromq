@@ -3,15 +3,11 @@
   (:import [org.zeromq.czmq Zframe Zpoller Zsock]))
 
 (comment
-  ;; Need this because singleton methods aren't static yet
-  (def factory (Zsock. 0))
-
-  (def srv (.newServer factory "@inproc://abcde"))
+  (def srv (Zsock/newServer "@inproc://abcde"))
   (assert srv)
-  (def cli (.newClient factory ">inproc://abcde"))
+  (def cli (Zsock/newClient ">inproc://abcde"))
   (assert cli)
 
-  (def frame_factory (Zframe. (byte-array 0) 0))
   ;; Don't want to block.
   ;; => Need to use either Zloop or Zpoller
   ;; Since Zloop is totally broken, that currently means Zpoller
@@ -38,21 +34,16 @@
   (println "Poller ID:" (.-self poller))
   (assert (= 0 (.add poller (.-self srv))))
 
-  (let [req "getting somewhere"
-        _ (println "1")
-        _ (println "2")
-        frame_factory (Zframe. (byte-array 0) 0)]
+  (let [req "getting somewhere"]
     (println "a")
     (future
       (Thread/sleep 50)
-      (let [req "getting somewhere"
-            f (Zframe. (.getBytes req) (count req))]
+      (let [f (Zframe. (.getBytes req) (count req))]
         ;; It doesn't seem to matter how I send this.
         ;; It's disappearing.
         ;; This is doubly annoying because this worked in jython.
-        (comment (assert (= 0 (.send f (.-self cli) 0))))
-        (.send f (.-self cli) 0))
-      (println "Sent"))
+        (assert (= 0 (.send f (.-self cli) 0)))
+        (println "Sent")))
     (println "b")
     (let [handle (.Wait poller 500)]
       (println "Poller notified:" handle)
@@ -61,7 +52,7 @@
         (do
           (println "Message available on srv, handle" handle)
           (assert (= handle (.-self srv)))
-          (let [rcvd (.recv frame_factory (.-self srv))
+          (let [rcvd (Zframe/recv (.-self srv))
                 body (.strdup rcvd)]
             (assert (= (String. body) req))
             (let [routing-id (.routingId rcvd)]
